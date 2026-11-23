@@ -112,7 +112,7 @@ async function newMatch() {
   try {
     const side = (i) => {
       const f = factions.find((x) => String(x.id) === v['f' + i]);
-      return { player: v['p' + i], factionId: f ? f.id : null, factionName: f ? f.name : v['n' + i] };
+      return { player: v['p' + i], factionId: f ? f.id : null, factionName: f ? f.name : v['n' + i], color: v['c' + i] };
     };
     const id = await D.createMatch({ gameId: game.id, name: v.name, mission: v.mission, mode: v.mode, sides: [side(0), side(1)] });
     await D.setSetting('lastLogGameId', game.id);

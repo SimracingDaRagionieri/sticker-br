@@ -4,7 +4,7 @@ Specifica e piano di sviluppo (documento del 22/11/2026). I prompt dei singoli p
 
 ## Stato di avanzamento (aggiornato al 23/11/2026, sera)
 
-- PASSO 14 (Colori dei team) REALIZZATO, DA PROVARE SUL TELEFONO. CACHE_VERSION 'v19'. Dettaglio nella sezione "Passo 14". Test nuovi dentro `tests/logexport-test.mjs` (teamColors, contrasti, operatori colore nel PDF) e `tests/ui-rifiniture-test.py` (classi tm0/tm1, variabili --t0/--t1, scelta colori dal menu e dal form, colori uguali rifiutati, lista, PDF). Tutti i test verdi. Nessun altro passo previsto.
+- PASSO 14 (Colori dei team) REALIZZATO, DA PROVARE SUL TELEFONO. CACHE_VERSION 'v20'. Dettaglio nella sezione "Passo 14". Test nuovi dentro `tests/logexport-test.mjs` (teamColors, contrasti, operatori colore nel PDF) e `tests/ui-rifiniture-test.py` (classi tm0/tm1, variabili --t0/--t1, scelta colori dal menu e dal form, colori uguali rifiutati, lista, PDF). Tutti i test verdi. Nessun altro passo previsto.
 - PASSO 13 (Rifiniture + esportazione del log in PDF) REALIZZATO, DA PROVARE SUL TELEFONO. CACHE_VERSION 'v18'. Dettaglio nella sezione "Passo 13". Test nuovi: `node tests/logexport-test.mjs` (PDF riletto con pdf.js), `python3 tests/ui-rifiniture-test.py` (Altro, cartella dedicata con finta cartella, PDF dal menu, offline con service worker, aree di tocco e contrasti su tutte le schermate); `ui-crea-test.py` ora crea i 300 elementi con `tests/testdata.js`. Tutti gli altri test verdi. Non ci sono altri passi previsti: restano solo le prove sul telefono e i difetti noti elencati nel Passo 13.
 - PASSO 6 (Importa PDF squadra): CHIUSO. Provato da Manu sul telefono con PDF veri, funziona tutto bene (23/11/2026).
 
@@ -498,7 +498,7 @@ VERIFICA SUL TELEFONO (Passo 13), prova completa offline:
 
 ### Passo 14 – Colori dei team (FATTO, da provare sul telefono)
 
-Realizzato (23/11/2026, CACHE_VERSION 'v19'). Richiesta di Vando: due colori diversi per i due team nell'interfaccia, per vedere a colpo d'occhio chi fa cosa. Decisioni: i colori valgono anche nel PDF del log; si scelgono per partita (tavolozza modificabile); predefiniti blu (giocatore/team 1) e arancione (team 2).
+Realizzato (23/11/2026, CACHE_VERSION 'v20'). Richiesta di Vando: due colori diversi per i due team nell'interfaccia, per vedere a colpo d'occhio chi fa cosa. Decisioni: i colori valgono anche nel PDF del log; si scelgono per partita (tavolozza modificabile); predefiniti blu (giocatore/team 1) e arancione (team 2).
 
 - Dati: `matches.sides[i].color` = chiave della tavolozza ('blu', 'arancione', 'verde', 'rosso', 'viola', 'giallo', 'azzurro', 'rosa'); entra nel backup con la tabella matches. Partite vecchie senza colore: predefiniti. `ML.teamColors(match)` (js/matchlog.js, puro) restituisce sempre due colori diversi (se coincidono, il secondo passa al primo libero) e ignora chiavi sconosciute.
 - Interfaccia: variabili CSS `--t0/--t1` sul documento mentre una partita e' aperta (tolte all'uscita), classi `tm0/tm1` (`--team`) su punti, rosa (intestazioni e righe), cronologia (barra a sinistra), recenti, pannello di scelta operativo e righe della lista partite. Segno ● (team 1) e ◆ (team 2) accanto ai nomi, cosi' la distinzione non dipende solo dal colore (daltonismo). Tutti i colori della tavolozza hanno contrasto >= 4,5:1 sullo sfondo scuro (test).
