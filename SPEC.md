@@ -5,16 +5,17 @@ Specifica e piano di sviluppo (documento del 22/11/2026). I prompt dei singoli p
 ## Stato di avanzamento (aggiornato al 23/11/2026)
 
 - Passi 1, 2, 3 e 4 completati. CACHE_VERSION 'v6'.
-- Passo 3 realizzato in forma semplificata: il ritaglio avviene direttamente sull'immagine di miniatura/arma (js/crop.js), senza tabella `cards` né schermata `#/ritaglio`. Da riprendere prima del Passo 8 (backup con "Includi carte originali").
-- Anticipo parziale del Passo 6: in Libreria, dentro ogni gioco, sezione Azioni con aggiungi, rinomina, preferito, elimina e `accentColor` facoltativo (righe `actions` = `{ gameId, name, accentColor, fav, lastUsed }`).
+- Passo 3 realizzato in forma semplificata: il ritaglio avviene direttamente sull'immagine di miniatura/arma (js/crop.js), senza tabella `cards` né schermata `#/ritaglio`. Superato dal nuovo Passo 5: le carte non si salvano.
+- Anticipo parziale del Passo 7: in Libreria, dentro ogni gioco, sezione Azioni con aggiungi, rinomina, preferito, elimina e `accentColor` facoltativo (righe `actions` = `{ gameId, name, accentColor, fav, lastUsed }`).
 - Passo 4: js/render.js (`renderSticker(data, config)`, `normalizeConfig`), font in /fonts (woff2 Latin/Latin-ext, licenze OFL-*.txt), template predefiniti "Attivazione", "Solo testo" (activation) e "Azione" (action) creati una volta sola (`settings.seededTemplates`, `settings.defaultTemplates` = {activation: id, action: id}), schermata `js/screens/anteprima.js`.
 - Router: `parseHash()` e `canGoBack()` esportati da app.js; `#/anteprima?unit=&weapon=&action=&template=` non ha voce nella barra (resta attiva quella di provenienza). Il cambio template usa `history.replaceState`, quindi "indietro" torna alla provenienza.
 - db.js: nuovi `listTemplates(kind)`, `getTemplate`, `getDefaultTemplate(kind)`, `getStickerSource({unitId,weaponId,actionId})` (righe + Blob immagini), `recordUse({unitId,weaponId,actionId,templateId})` (lastUsed, useCount, `recents` con chiave tipo `u12-w40-t1`, max 30). export.js: `stickerFilename(parti)`.
 - Convenzioni del motore: `padding` = margine trasparente mantenuto dopo il taglio; con targa lo sticker è largo esattamente `width` (1080), senza targa ("Solo testo") è tagliato sul testo e quindi più stretto; `plate.padding` (predefinito 28) = spazio targa-contenuto; `lines[].weight` facoltativo; `stroke.width` = spessore visibile del contorno; se il template non ha `plate.border` e i dati hanno `accentColor`, questo diventa il bordo della targa.
 - Dopo la prova sul telefono: "Attivazione" senza targa (sfondo trasparente) e con `weaponImage.show: true, replaceText: true` (il profilo arma importato dalla carta prende il posto del nome arma scritto; se l'arma non ha immagine resta il testo). I template predefiniti vengono riscritti una volta sola (`settings.templatesRev` = 2).
 - Provvisorio in Libreria: tocco su un'arma nella scheda miniatura e pulsante "Sticker solo <miniatura>" aprono l'Anteprima; menu ⋮ di un'azione: "Anteprima sticker".
-- Attenzione per il Passo 5: eliminando giochi/miniature/armi/azioni le righe `recents` non vengono ripulite; ignorare i recenti con riferimenti mancanti.
-- Prossimo: Passo 5 (schermata Crea). Restano da fare del Passo 6: campi `label`, `mode`, `imageId`, `templateId`, "Importa PNG", "Valida per tutti i giochi", azioni predefinite di Kill Team.
+- Attenzione per il Passo 6: eliminando giochi/miniature/armi/azioni le righe `recents` non vengono ripulite; ignorare i recenti con riferimenti mancanti.
+- Piano riorganizzato (23/11/2026): nuovo Passo 5 "Importa carta e profili arma automatici" (senza OCR, icone insegnate una sola volta, fasce correggibili a mano); i vecchi Passi 5-9 sono ora 6-10.
+- Prossimo: Passo 5 (importa carta e profili arma). Poi Passo 6 (schermata Crea). Restano da fare del Passo 7 (azioni): campi `label`, `mode`, `imageId`, `templateId`, "Importa PNG", "Valida per tutti i giochi", azioni predefinite di Kill Team.
 - Attenzione: IndexedDB non indicizza `null`; le azioni con `gameId: null` non compaiono in `listActions(gameId)`. Gestire l'unione con le azioni globali oppure usare `db.version(2)`.
 
 ## Sintesi e decisioni
@@ -168,7 +169,7 @@ Il limite principale: una web app non può scrivere direttamente nella Galleria.
 | WhatsApp, Telegram e alcune app convertono in JPEG o WebP | trasparenza persa | mai passare da app di messaggi; in Google Foto usare qualità originale |
 | Download multipli | Chrome chiede una volta "Consenti download multipli" | coda con download in sequenza (400 ms) oppure una sola condivisione con più file |
 | Nomi file doppi | Chrome aggiunge "(1)" | data e ora nel nome |
-| Cartella dedicata (showDirectoryPicker) | supporto su Android non garantito; file forse non visibili subito in galleria | solo se il browser la offre, con ritorno automatico al download; da verificare al passo 9 |
+| Cartella dedicata (showDirectoryPicker) | supporto su Android non garantito; file forse non visibili subito in galleria | solo se il browser la offre, con ritorno automatico al download; da verificare al passo 10 |
 | Dati in IndexedDB | si cancellano se si svuotano i dati del sito o con memoria quasi piena | navigator.storage.persist() all'avvio, promemoria di backup dopo 14 giorni |
 | Foto da 50 MP | il canvas può esaurire la memoria e bloccarsi | riduzione a 2400 px con createImageBitmap al momento dell'import |
 | Orientamento delle foto | rischio di carte ruotate | createImageBitmap rispetta l'EXIF; si prova una foto verticale |
@@ -179,7 +180,7 @@ Il limite principale: una web app non può scrivere direttamente nella Galleria.
 
 ## 5. Piano di sviluppo
 
-9 passi; ognuno si prova sul telefono prima di passare al successivo.
+10 passi; ognuno si prova sul telefono prima di passare al successivo.
 
 **Contesto da incollare in testa a ogni prompt:** PWA per Android/Chrome "Sticker Battle Report" che genera sticker PNG trasparenti per montare battle report di wargame (Kill Team, Warhammer 40,000, The Old World, altri in futuro) nell'app InShot. Gerarchia dati: Gioco > Fazione > Miniatura > Arma, più Azioni. Vincoli: HTML + CSS + JavaScript a moduli ES, nessun framework, nessuna build, nessun CDN (librerie in /vendor), nessun server, nessun account. Interfaccia in italiano; i nomi di giochi, fazioni, miniature, armi e azioni sono in inglese e li inserisce l'utente. Mobile-first, tema scuro, aree di tocco minime 48 px, pannelli dal basso al posto di prompt()/alert(). Dati in IndexedDB con Dexie 4. Router a hash; il tasto indietro di Android deve tornare al livello precedente. Regole: ogni volta che aggiungi o rinomini un file aggiorna l'elenco dei file in cache in sw.js e incrementa CACHE_VERSION. Non modificare file estranei al passo. Se non puoi scaricare una libreria o un font, dire esattamente quale file mettere e dove. A fine lavoro elencare i file toccati e cosa provare sul telefono.
 
@@ -216,7 +217,21 @@ Piano originale: Cropper.js 1.6.x; "Importa carta" da fazione e scheda miniatura
 
 Verifica: PNG largo 1080 px e trasparente in InShot; font giusto anche al primo avvio offline; nome lungo non esce dallo sticker; niente margini trasparenti inutili.
 
-### Passo 5 – Schermata Crea
+### Passo 5 – Importa carta e profili arma automatici (NUOVO)
+
+Idea: si carica la foto/screenshot di una carta operativo e l'app propone da sola una striscia per ogni arma (profilo completo: nome, A, BS/WS, D, regole). Niente OCR: il nome dell'arma si scrive una sola volta; poi l'arma resta collegata all'operativo (e riusabile da altri operativi della fazione), quindi la carta di quell'operativo non serve più.
+
+- Ingresso: da fazione e da scheda miniatura, "Importa carta" (js/crop.js ha già pickImage). La carta si riduce a 2400 px con createImageBitmap e resta solo in memoria: NIENTE tabella `cards` e niente carte nel backup (decisione: risparmia spazio; l'immagine ritagliata di miniatura/arma resta in `images`, "Ritaglia di nuovo" lavora su quella).
+- Nuovo modulo js/cardscan.js (puro, senza DOM visibile): `findWeaponRows(bitmap, iconTemplates)` -> array di { y0, y1 } (strisce a tutta larghezza, ordinate dall'alto). Riconoscimento per icone: i simboli arma a distanza (mirino/munizioni) e mischia (spada) compaiono una volta per riga. Confronto per template matching su versione in scala di grigi ridotta (es. 600 px di larghezza), correlazione normalizzata a piu' scale (0.8-1.25), soglia regolabile, soppressione dei doppioni vicini; la striscia di una riga va dall'icona (meno un margine) fino a poco prima dell'icona successiva o fino alla fine della tabella.
+- Le icone di riferimento si "insegnano" una volta sola, senza dover fornire immagini: la prima volta l'app mostra la carta, l'utente trascina un riquadro sull'icona a distanza e uno su quella di mischia; i due ritagli (piccoli PNG in grigio) si salvano in `settings.iconTemplates` per gioco `{ [gameId]: { ranged: Blob, melee: Blob } }` e si possono rifare da Altro/Libreria ("Reimposta icone"). Se l'utente allega carte campione, usarle per tarare soglia e scale.
+- Schermata a tutto schermo `#/carta` (stile js/crop.js: canvas, touch-action none, tasto indietro Android): carta con le strisce proposte come fasce colorate; ogni fascia si sposta/ridimensiona trascinando i bordi, si elimina, e "Aggiungi fascia" ne crea una a mano (ripiego se il riconoscimento sbaglia o per carte storte). Pulsante "Rileva armi" (ri-esegue), cursore Sensibilita'.
+- Conferma: elenco delle strisce con miniatura; per ciascuna un solo campo "Arma": scegli un'arma esistente della fazione (non ancora collegata o senza immagine) oppure "Nuova" + nome in inglese; tipo (distanza/mischia) preselezionato dall'icona trovata. Salvataggio: per ogni striscia ritaglio PNG (lato lungo max 1200 px, trasparenza non necessaria), `addWeapon` o collegamento con `setUnitWeapons`, `setWeaponImage(id, blob, w, h, thumb)`. Le armi gia' esistenti con immagine non vengono sovrascritte senza conferma.
+- Facoltativo nello stesso flusso: dopo le armi, proporre il ritaglio della miniatura con crop.js (come oggi) dalla stessa carta.
+- Anteprima: con il profilo arma importato lo sticker "Attivazione" lo mostra al posto del nome arma (gia' fatto: `weaponImage.replaceText`).
+
+Verifica: con una carta di 3-4 armi le strisce proposte coincidono con le righe; la correzione manuale funziona su una foto leggermente storta; armi gia' presenti riusate senza doppioni; seconda carta dello stesso gioco senza dover rifare l'insegnamento icone; tasto indietro Android coerente.
+
+### Passo 6 – Schermata Crea
 
 - js/search.js: indice in memoria costruito all'avvio e aggiornato a ogni modifica del db. Nomi normalizzati (minuscolo, senza accenti e punteggiatura); ogni parola digitata deve essere l'inizio di una parola del nome; filtrabile per gioco.
 - Ricerca e chip del gioco attivo (settings.lastGameId; "Tutti"). Risultati raggruppati Miniature, Armi ("Bolt rifle · Intercessor Warrior"), Azioni; max 8 per gruppo.
@@ -227,7 +242,7 @@ Verifica: PNG largo 1080 px e trasparente in InShot; font giusto anche al primo 
 
 Verifica: recente salvato con 1 tocco lungo; nuovo con ricerca + 3 tocchi; con 300 elementi nessun ritardo percepibile.
 
-### Passo 6 – Azioni (parte base già fatta)
+### Passo 7 – Azioni (parte base già fatta)
 
 - In Libreria, dentro ogni gioco, voce "Azioni" con elenco e anteprima.
 - "Importa PNG": input multiplo accept="image/png"; ogni file diventa un'azione mode 'png', nome dal file (reposition.png → Reposition, pick_up_marker.png → Pick Up Marker), Blob senza ricompressione; Salva e Condividi esportano il file originale identico.
@@ -238,7 +253,7 @@ Verifica: recente salvato con 1 tocco lungo; nuovo con ricerca + 3 tocchi; con 3
 
 Verifica: un PNG già esistente esce identico (stessi KB); le azioni generate hanno lo stile del template Azione.
 
-### Passo 7 – Editor dei template e font
+### Passo 8 – Editor dei template e font
 
 - Schermata Template: elenco per tipo con Duplica, Rinomina, Elimina (non l'ultimo del tipo), Imposta predefinito.
 - Editor: anteprima fissa in alto (40% dello schermo) su scacchi con i dati dell'ultimo recente o "Intercessor Sergeant" / "Bolt rifle". Gruppi a fisarmonica: Dimensioni (larghezza 540-2160, padding, taglio margini), Targa, Immagine (lato sinistra/destra/sopra, altezza, raggio, bordo), Righe di testo (aggiungi/rimuovi/ordina; origine, font, dimensione, minima, colore, contorno, ombra, maiuscolo, allineamento), Immagine arma (mostra, sotto o a destra, altezza massima). Colori con `<input type="color">`. Ridisegno al massimo una volta per frame, salvataggio automatico.
@@ -246,15 +261,15 @@ Verifica: un PNG già esistente esce identico (stessi KB); le azioni generate ha
 
 Verifica: modifiche dopo il riavvio; font importato nel PNG anche offline; PNG esportato uguale all'anteprima.
 
-### Passo 8 – Backup e ripristino
+### Passo 9 – Backup e ripristino
 
-- vendor/jszip.min.js (JSZip 3), js/backup.js e sezione Backup in Altro. "Esporta backup": ZIP con data.json {app:'sticker-br', schemaVersion, exportedAt, tables:{...}}, Blob sostituiti da images/<id>.png, cards/<id>.jpg, fonts/<id>.<ext> più i file. Interruttore "Includi carte originali" (attivo di default). Nome BR_backup_AAAAMMGG.zip, Salva e Condividi. Salva settings.lastBackupAt.
+- vendor/jszip.min.js (JSZip 3), js/backup.js e sezione Backup in Altro. "Esporta backup": ZIP con data.json {app:'sticker-br', schemaVersion, exportedAt, tables:{...}}, Blob sostituiti da images/<id>.png, cards/<id>.jpg, fonts/<id>.<ext> più i file. Le carte non vengono salvate (vedi Passo 5), quindi nessun interruttore "Includi carte originali". Nome BR_backup_AAAAMMGG.zip, Salva e Condividi. Salva settings.lastBackupAt.
 - "Ripristina": scegli lo .zip, controlla app e schemaVersion, riepilogo (giochi, fazioni, miniature, armi, azioni, immagini, template), conferma "Sostituisce tutti i dati attuali". Prima scarica in automatico un backup dei dati attuali, poi svuota e reimporta mantenendo gli id in una sola transazione. File non valido: errore e nessun dato toccato. Dopo il ripristino ricarica indice di ricerca e font.
 - In Crea avviso discreto se l'ultimo backup ha più di 14 giorni e ci sono modifiche successive.
 
 Verifica: esporti, cancelli i dati del sito da Chrome, ripristini: tutto identico, immagini e font compresi; un file sbagliato dà errore senza cancellare nulla.
 
-### Passo 9 – Rifiniture
+### Passo 10 – Rifiniture
 
 - Coda: in Anteprima "Aggiungi alla coda"; icona coda con contatore in Crea; in Altro "Salva tutti" (download in sequenza ogni 400 ms), "Condividi tutti" (una sola navigator.share con più file), "Svuota coda".
 - Cartella dedicata: solo se 'showDirectoryPicker' in window; handle in settings, queryPermission/requestPermission, createWritable; se qualcosa fallisce ripiega sul download e lo dice; altrimenti nascondi l'opzione.
