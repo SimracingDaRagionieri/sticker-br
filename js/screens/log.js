@@ -2,6 +2,7 @@
 // Route: #/log (elenco), #/log?m=<id> (partita; &v=cron = cronologia).
 
 import * as D from '../db.js';
+import * as ML from '../matchlog.js';
 import { parseHash, toast } from '../app.js';
 import { esc, menuSheet, confirmSheet, formSheet, pickSheet } from '../ui.js';
 
@@ -51,6 +52,7 @@ async function listScreen(el) {
         <a class="item-main" href="#/log?m=${m.id}">
           <span class="item-name">${esc(vsText(m))}${m.mission ? ` <span class="meta">· ${esc(m.mission)}</span>` : ''}</span>
           <span class="item-meta">${esc(labelOf(m, counts[i]))}</span>
+          <span class="item-meta lg-teams">${ML.teamColors(m).map((c, k) => `<span style="color:${c.hex}">${ML.TEAM_MARKS[k]} ${esc(sideLabel((m.sides || [])[k], k))}</span>`).join(' · ')}</span>
           <span class="chev">›</span>
         </a>
         <button type="button" class="kebab" data-menu="${m.id}" aria-label="Menu di ${esc(vsText(m))}">⋮</button>
@@ -98,12 +100,15 @@ async function newMatch() {
       { name: 'p0', label: 'Giocatore 1', type: 'text', value: '' },
       { name: 'f0', label: `${L.faction || 'Fazione'} del giocatore 1`, type: 'select', value: '', options: fOptions },
       { name: 'n0', label: `Nome ${String(L.faction || 'fazione').toLowerCase()} 1 (solo se «scrivo il nome»)`, type: 'text', value: '' },
+      { name: 'c0', label: 'Colore del giocatore 1', type: 'select', value: 'blu', options: ML.TEAM_COLORS.map((c) => ({ value: c.key, label: c.label })) },
       { name: 'p1', label: 'Giocatore 2', type: 'text', value: '' },
       { name: 'f1', label: `${L.faction || 'Fazione'} del giocatore 2`, type: 'select', value: '', options: fOptions },
-      { name: 'n1', label: `Nome ${String(L.faction || 'fazione').toLowerCase()} 2 (solo se «scrivo il nome»)`, type: 'text', value: '' }
+      { name: 'n1', label: `Nome ${String(L.faction || 'fazione').toLowerCase()} 2 (solo se «scrivo il nome»)`, type: 'text', value: '' },
+      { name: 'c1', label: 'Colore del giocatore 2', type: 'select', value: 'arancione', options: ML.TEAM_COLORS.map((c) => ({ value: c.key, label: c.label })) }
     ]
   });
   if (!v) return;
+  if (v.c0 === v.c1) { toast('I due team devono avere colori diversi'); return; }
   try {
     const side = (i) => {
       const f = factions.find((x) => String(x.id) === v['f' + i]);

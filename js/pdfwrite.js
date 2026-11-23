@@ -93,13 +93,14 @@ export function createPdf({ title = '', author = '', footer = '', margin = 48, d
 
   const api = {
     // Paragrafo con ritorno a capo. indent = rientro in punti; hang = rientro in piu' delle righe successive.
-    text(text, { size = 10, bold = false, indent = 0, hang = 0, color: c = null, gap = 2, keepWithNext = 0 } = {}) {
+    text(text, { size = 10, bold = false, indent = 0, hang = 0, color: c = null, gap = 2, keepWithNext = 0, bar = null } = {}) {
       const lh = size * 1.3;
       const lines2 = wrapText(text, size, bold, innerW - indent, innerW - indent - hang);
       ensure(Math.min(lines2.length, 2) * lh + keepWithNext);
       lines2.forEach((l, i) => {
         ensure(lh);
         y -= lh;
+        if (bar) op(`${bar.map(num).join(' ')} rg ${num(margin + indent - 8)} ${num(y)} 3 ${num(lh)} re f`); // barra colorata a sinistra
         drawAt(margin + indent + (i ? hang : 0), y + size * 0.28, l, size, bold, c);
       });
       y -= gap;

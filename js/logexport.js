@@ -4,8 +4,8 @@
 // rose a fine partita (ferite rimaste/massime, incapacitati), cronologia per turno (iniziativa e come, attivazioni,
 // azioni, attacchi con danni e ferite rimaste, incapacitati, punti, note) e numero di avvisi di coerenza.
 
-import { createPdf } from './pdfwrite.js';
-import { summaryEntries } from './matchlog.js';
+import { createPdf, textWidth } from './pdfwrite.js';
+import { summaryEntries, teamColors } from './matchlog.js';
 
 const GRAY = [0.4, 0.4, 0.4];
 const RED = [0.7, 0.12, 0.12];
@@ -21,6 +21,7 @@ export function buildLogPdf(match, units, events, rep, { sideName, now = new Dat
   const { entries, sn } = summaryEntries(match, units, events, rep, { sideName });
   const sides = match.sides || [];
   const title = match.name || sides.map((s) => s.player || s.factionName).join(' vs ') || 'Partita';
+  const tc = teamColors(match).map((c) => c.pdf); // colori dei due team (versione per carta bianca)
   const pdf = createPdf({ title, footer: `${title} - Sticker Battle Report`, date: now });
 
   // Intestazione
@@ -32,11 +33,19 @@ export function buildLogPdf(match, units, events, rep, { sideName, now = new Dat
   for (let s = 0; s < Math.max(2, sides.length); s++) {
     const sd = sides[s] || {};
     const who = [sd.player, sd.factionName ? `(${sd.factionName})` : ''].filter(Boolean).join(' ') || `Lato ${s + 1}`;
-    pdf.text(`${s + 1}. ${who}`, { size: 11, bold: true, gap: 1 });
+    pdf.text(`${s + 1}. ${who}`, { size: 11, bold: true, gap: 1, color: tc[s] || null });
   }
   pdf.space(4);
-  const points = rep.score.map((p, s) => `${sn(s)} ${p}`).join('  –  ');
-  pdf.text(`Punti: ${points}`, { size: 14, bold: true, gap: 6 });
+  // "Punti: Lato A 2 – Lato B 0" con ogni lato nel suo colore
+  const cells = [{ text: 'Punti:', x: 0, bold: true }];
+  let px = textWidth('Punti: ', 14, true);
+  rep.score.forEach((p, s) => {
+    if (s) { cells.push({ text: '–', x: px, bold: true }); px += textWidth('– ', 14, true); }
+    const t = `${sn(s)} ${p}`;
+    cells.push({ text: t, x: px, bold: true, color: tc[s] || null });
+    px += textWidth(t + ' ', 14, true);
+  });
+  pdf.row(cells, { size: 14, gap: 6 });
   if (match.notes) pdf.text(match.notes, { size: 9.5, color: GRAY, gap: 4 });
 
   // Rose a fine partita
@@ -48,7 +57,7 @@ export function buildLogPdf(match, units, events, rep, { sideName, now = new Dat
     for (let s = 0; s < nSides; s++) {
       const mine = units.filter((u) => u.side === s);
       if (!mine.length) continue;
-      pdf.text(sn(s), { size: 10, bold: true, gap: 1, keepWithNext: 30 });
+      pdf.text(sn(s), { size: 10.5, bold: true, gap: 1, keepWithNext: 30, color: tc[s] || null });
       for (const u of mine) {
         const st = state(u);
         let right = 'ferite non tracciate';
@@ -64,7 +73,14 @@ export function buildLogPdf(match, units, events, rep, { sideName, now = new Dat
   pdf.rule({ gap: 5 });
   pdf.text('Cronologia', { size: 14, bold: true, gap: 3, keepWithNext: 50 });
   if (!entries.length) pdf.text('Nessuna voce registrata.', { size: 10, color: GRAY });
+  const sideOf = (e) => {
+    const d = rep.derived[e.index];
+    const v = d && d.side != null ? d.side : events[e.index] && events[e.index].side;
+    return v === 0 || v === 1 ? v : null;
+  };
   for (const e of entries) {
+    const sd = e.kind === 'turn' ? null : sideOf(e);
+    const bar = sd != null ? tc[sd] : null;
     switch (e.kind) {
       case 'turn':
         pdf.space(6);
@@ -73,19 +89,19 @@ export function buildLogPdf(match, units, events, rep, { sideName, now = new Dat
         else pdf.space(3);
         break;
       case 'activation':
-        pdf.text(e.text, { size: 10.5, bold: true, indent: 8, gap: 1, keepWithNext: 14 });
+        pdf.text(e.text, { size: 10.5, bold: true, indent: 8, gap: 1, keepWithNext: 14, color: bar, bar });
         break;
       case 'incapacitated':
-        pdf.text(e.text, { size: 10, bold: true, indent: 24, hang: 10, color: RED, gap: 1 });
+        pdf.text(e.text, { size: 10, bold: true, indent: 24, hang: 10, color: RED, gap: 1, bar });
         break;
       case 'score':
-        pdf.text(e.text, { size: 10, bold: true, indent: 8, gap: 1 });
+        pdf.text(e.text, { size: 10, bold: true, indent: 8, gap: 1, color: bar, bar });
         break;
       case 'note':
-        pdf.text(e.text, { size: 9.5, indent: 8, hang: 10, color: GRAY, gap: 1 });
+        pdf.text(e.text, { size: 9.5, indent: 8, hang: 10, color: GRAY, gap: 1, bar });
         break;
       default:
-        pdf.text(e.text, { size: 10, indent: 24, hang: 10, gap: 1 });
+        pdf.text(e.text, { size: 10, indent: 24, hang: 10, gap: 1, bar });
     }
   }
   if (rep.warnings.length) {

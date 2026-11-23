@@ -13,7 +13,25 @@ import { queueButtonHTML, bindQueueButton } from './coda.js';
 
 let S = null; // stato della schermata aperta
 
-export function cleanup() { S = null; }
+export function cleanup() {
+  S = null;
+  document.documentElement.style.removeProperty('--t0');
+  document.documentElement.style.removeProperty('--t1');
+}
+
+// Colori dei team (Passo 14): variabili CSS --t0/--t1 sulla pagina (valgono anche per i pannelli) e segno ●/◆ accanto al nome.
+function applyTeamColors() {
+  const [c0, c1] = ML.teamColors(S.match);
+  document.documentElement.style.setProperty('--t0', c0.hex);
+  document.documentElement.style.setProperty('--t1', c1.hex);
+}
+const mark = (side) => `<span class="tmark tm${side}" aria-hidden="true">${ML.TEAM_MARKS[side] || ''}</span>`;
+const sideOfEvent = (i) => {
+  const d = S.rep.derived[i];
+  const e = S.events[i];
+  const v = d && d.side != null ? d.side : e.side;
+  return v === 0 || v === 1 ? v : null;
+};
 
 export async function renderMatch(el, id, query) {
   await D.ready();
@@ -77,7 +95,7 @@ const woundsBadge = (u) => (u.max != null ? `${u.left}/${u.max}` : '–');
 
 function unitOption(u, extra = '') {
   const w = u.max != null ? `${u.left}/${u.max} ferite` : 'ferite non tracciate';
-  return { value: String(u.id), label: u.name, sub: `${sideName(u.side)} · ${w}${u.incapacitated ? ' · incapacitato' : ''}${extra}` };
+  return { value: String(u.id), side: u.side, label: u.name, sub: `${sideName(u.side)} · ${w}${u.incapacitated ? ' · incapacitato' : ''}${extra}` };
 }
 
 const bySideThenName = (a, b) => a.side - b.side || a.name.localeCompare(b.name);
@@ -100,6 +118,7 @@ function draw() {
   const sc = here.score;
   const iniLine = ini ? `Iniziativa: ${esc(ML.initiativeText(ini, sideName))}` : '';
   const warns = S.rep.warnings.length;
+  applyTeamColors();
   const body = S.view === 'cron' ? cronHTML() : tableHTML(here);
 
   S.el.innerHTML = `
@@ -113,9 +132,9 @@ function draw() {
       <button type="button" class="kebab" data-act="match-menu" aria-label="Menu partita">⋮</button>
     </div>
     <div class="lg-score" data-score>
-      <div class="lg-side"><span class="lg-name">${esc(sideName(0))}</span><b data-pts="0">${sc[0] ?? 0}</b></div>
+      <div class="lg-side tm0"><span class="lg-name">${mark(0)} ${esc(sideName(0))}</span><b data-pts="0">${sc[0] ?? 0}</b></div>
       <span class="lg-dash">–</span>
-      <div class="lg-side"><b data-pts="1">${sc[1] ?? 0}</b><span class="lg-name">${esc(sideName(1))}</span></div>
+      <div class="lg-side tm1"><b data-pts="1">${sc[1] ?? 0}</b><span class="lg-name">${esc(sideName(1))} ${mark(1)}</span></div>
     </div>
     <div class="chips lg-tabs">
       <button type="button" class="chip" data-view="tavolo" aria-pressed="${S.view === 'tavolo'}">Tavolo</button>
@@ -166,7 +185,7 @@ function recentHTML() {
   if (end === 0) return '<p class="empty">Nessuna voce nel log. Tocca «Nuova attivazione» nel Tavolo per registrare la prima.</p>';
   const rows = [];
   for (let i = end - 1; i >= from; i--) {
-    rows.push(`<li class="lg-recent"><span class="lg-seq">${S.events[i].seq}</span><span>${esc(ML.describeEvent(S.events, i, S.rep, S.units, describeOpts()))}</span></li>`);
+    rows.push(`<li class="lg-recent${sideOfEvent(i) != null ? ' tm' + sideOfEvent(i) : ''}"><span class="lg-seq">${S.events[i].seq}</span><span>${esc(ML.describeEvent(S.events, i, S.rep, S.units, describeOpts()))}</span></li>`);
   }
   return `<h2>Ultime voci</h2><ul class="lg-recent-list" data-recent>${rows.join('')}</ul>`;
 }
@@ -175,10 +194,10 @@ function rosterHTML(here) {
   const blocks = [0, 1].map((side) => {
     const units = [...here.units.values()].filter((u) => u.side === side);
     const s = (S.match.sides || [])[side] || {};
-    return `<div class="lg-roster-side" data-side="${side}">
-      <h3>${esc(sideName(side))}${s.factionName && s.player ? ` <span class="meta">· ${esc(s.factionName)}</span>` : ''}</h3>
+    return `<div class="lg-roster-side tm${side}" data-side="${side}">
+      <h3 class="team-h">${mark(side)} ${esc(sideName(side))}${s.factionName && s.player ? ` <span class="meta">· ${esc(s.factionName)}</span>` : ''}</h3>
       ${units.length ? `<ul class="list">${units.map((u) => `
-        <li class="item"><button type="button" class="item-main lg-unit${u.incapacitated ? ' out' : ''}" data-unit-menu="${u.id}">
+        <li class="item tm${side}"><button type="button" class="item-main lg-unit${u.incapacitated ? ' out' : ''}" data-unit-menu="${u.id}">
           <span class="item-name">${esc(u.name)}</span>
           <span class="item-meta">${u.incapacitated ? 'incapacitato' : (u.max != null ? 'ferite' : 'ferite non tracciate')}</span>
           ${u.max != null ? `<span class="lg-bar"><i style="width:${Math.round(100 * u.left / u.max)}%"></i></span>` : ''}
@@ -211,8 +230,8 @@ function cronHTML() {
     return `<h2 class="lg-turn-h">${esc(head)}</h2><ul class="lg-ev-list">${g.rows.map((i) => {
       const ev = events[i];
       const sub = ev.type === 'damage' || ev.type === 'incapacitated' || ev.type === 'attack';
-      return `<li><button type="button" class="lg-ev${sub ? ' sub' : ''}${warn.has(i) ? ' warn' : ''}" data-ev="${i}">
-        <span class="lg-seq">${ev.seq}</span>
+      return `<li><button type="button" class="lg-ev${sub ? ' sub' : ''}${warn.has(i) ? ' warn' : ''}${sideOfEvent(i) != null ? ' tm' + sideOfEvent(i) : ''}" data-ev="${i}">
+        <span class="lg-seq">${ev.seq}</span>${sideOfEvent(i) != null ? mark(sideOfEvent(i)) : ''}
         <span class="lg-txt">${esc(ML.describeEvent(events, i, rep, S.units, describeOpts()))}${warn.has(i) ? `<small class="lg-wtxt">⚠ ${esc(warn.get(i).join('; '))}</small>` : ''}</span>
       </button></li>`;
     }).join('')}</ul>`;
@@ -628,14 +647,19 @@ async function matchMenu() {
   menuSheet(S.match.name || 'Partita', [
     { label: 'Nome, missione, giocatori…', run: () => run(async () => {
       const m = S.match;
+      const tc = ML.teamColors(m);
+      const colorOptions = ML.TEAM_COLORS.map((c) => ({ value: c.key, label: c.label }));
       const v = await formSheet({ title: 'Partita', fields: [
         { name: 'name', label: 'Nome', type: 'text', value: m.name || '' },
         { name: 'mission', label: 'Missione', type: 'text', value: m.mission || '' },
         { name: 'p0', label: 'Giocatore 1', type: 'text', value: (m.sides[0] || {}).player || '' },
         { name: 'p1', label: 'Giocatore 2', type: 'text', value: (m.sides[1] || {}).player || '' },
+        { name: 'c0', label: 'Colore del giocatore 1', type: 'select', value: tc[0].key, options: colorOptions },
+        { name: 'c1', label: 'Colore del giocatore 2', type: 'select', value: tc[1].key, options: colorOptions },
         { name: 'notes', label: 'Note', type: 'text', value: m.notes || '' }] });
       if (!v) return;
-      const sides = [0, 1].map((i) => ({ ...(m.sides[i] || {}), player: v['p' + i] }));
+      if (v.c0 === v.c1) { toast('I due team devono avere colori diversi'); return; }
+      const sides = [0, 1].map((i) => ({ ...(m.sides[i] || {}), player: v['p' + i], color: v['c' + i] }));
       await D.updateMatch(S.id, { name: v.name, mission: v.mission, notes: v.notes, sides });
     }) },
     { label: isRebuild() ? 'Passa a «in diretta»' : 'Passa a «ricostruzione»', run: () => run(async () => { await D.updateMatch(S.id, { mode: isRebuild() ? 'live' : 'rebuild' }); S.cursor = null; }) },

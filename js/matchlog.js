@@ -17,6 +17,37 @@
 //
 // Rosa (matchUnits): { id, matchId, side, unitId|null, name, maxWounds|null, note }.
 
+// Colori dei due team (Passo 14). `hex` = sul tema scuro dell'app (contrasto >= 4,5:1 su #1c1c1c), `pdf` = versione piu' scura
+// per la carta bianca. Salvati per partita come `matches.sides[i].color` (la chiave); senza scelta: blu e arancione.
+export const TEAM_COLORS = [
+  { key: 'blu', label: 'Blu', hex: '#4da3ff', pdf: [0.08, 0.38, 0.82] },
+  { key: 'arancione', label: 'Arancione', hex: '#ff9040', pdf: [0.8, 0.36, 0] },
+  { key: 'verde', label: 'Verde', hex: '#4cd37b', pdf: [0.05, 0.5, 0.2] },
+  { key: 'rosso', label: 'Rosso', hex: '#ff6b6b', pdf: [0.75, 0.1, 0.1] },
+  { key: 'viola', label: 'Viola', hex: '#b794ff', pdf: [0.4, 0.25, 0.75] },
+  { key: 'giallo', label: 'Giallo', hex: '#f2d44d', pdf: [0.55, 0.45, 0] },
+  { key: 'azzurro', label: 'Azzurro', hex: '#3fd4d4', pdf: [0, 0.5, 0.55] },
+  { key: 'rosa', label: 'Rosa', hex: '#ff7fc0', pdf: [0.78, 0.2, 0.5] }
+];
+export const DEFAULT_TEAM_KEYS = ['blu', 'arancione'];
+// Segno accanto al colore (per chi non distingue i colori): cerchio per il lato 1, rombo per il lato 2.
+export const TEAM_MARKS = ['●', '◆'];
+
+export const teamColorKey = (k) => (TEAM_COLORS.some((c) => c.key === k) ? k : '');
+
+// I due colori della partita [lato 0, lato 1]: sempre diversi (se la scelta coincide o manca, il lato 2 passa al primo libero).
+export function teamColors(match) {
+  const sides = (match && match.sides) || [];
+  const want = [0, 1].map((i) => teamColorKey(sides[i] && sides[i].color));
+  const out = [];
+  for (let i = 0; i < 2; i++) {
+    let k = want[i] || DEFAULT_TEAM_KEYS[i];
+    if (i === 1 && k === out[0].key) k = (want[1] && want[1] !== out[0].key ? want[1] : DEFAULT_TEAM_KEYS.find((x) => x !== out[0].key) || TEAM_COLORS.find((c) => c.key !== out[0].key).key);
+    out.push(TEAM_COLORS.find((c) => c.key === k));
+  }
+  return out;
+}
+
 export const EVENT_TYPES = ['turn-start', 'activation', 'action', 'attack', 'damage', 'incapacitated', 'score', 'note'];
 
 // Ferite massime valide: intero > 0 (il PDF le da' come stringa "9"); altrimenti null = tracciamento spento.

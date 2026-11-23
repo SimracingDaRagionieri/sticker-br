@@ -137,7 +137,7 @@ export function pickSheet({ title, options, cancelLabel = 'Annulla', hint = '' }
       <h3 class="sheet-title">${esc(title)}</h3>
       ${hint ? `<p class="sheet-text meta">${esc(hint)}</p>` : ''}
       <div class="sheet-menu">
-        ${options.map((o, i) => `<button type="button" class="pick${o.primary ? ' primary' : ''}${o.danger ? ' danger' : ''}" data-i="${i}" data-pick="${esc(o.value)}">
+        ${options.map((o, i) => `<button type="button" class="pick${o.primary ? ' primary' : ''}${o.danger ? ' danger' : ''}${o.side === 0 || o.side === 1 ? ' tm' + o.side : ''}" data-i="${i}" data-pick="${esc(o.value)}">
           <span class="pick-label">${esc(o.label)}</span>${o.sub ? `<small class="pick-sub">${esc(o.sub)}</small>` : ''}</button>`).join('')}
       </div>
       <button type="button" class="sheet-cancel" data-cancel>${esc(cancelLabel)}</button>`, { onClose: () => resolve(result) });

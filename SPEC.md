@@ -4,6 +4,7 @@ Specifica e piano di sviluppo (documento del 22/11/2026). I prompt dei singoli p
 
 ## Stato di avanzamento (aggiornato al 23/11/2026, sera)
 
+- PASSO 14 (Colori dei team) REALIZZATO, DA PROVARE SUL TELEFONO. CACHE_VERSION 'v19'. Dettaglio nella sezione "Passo 14". Test nuovi dentro `tests/logexport-test.mjs` (teamColors, contrasti, operatori colore nel PDF) e `tests/ui-rifiniture-test.py` (classi tm0/tm1, variabili --t0/--t1, scelta colori dal menu e dal form, colori uguali rifiutati, lista, PDF). Tutti i test verdi. Nessun altro passo previsto.
 - PASSO 13 (Rifiniture + esportazione del log in PDF) REALIZZATO, DA PROVARE SUL TELEFONO. CACHE_VERSION 'v18'. Dettaglio nella sezione "Passo 13". Test nuovi: `node tests/logexport-test.mjs` (PDF riletto con pdf.js), `python3 tests/ui-rifiniture-test.py` (Altro, cartella dedicata con finta cartella, PDF dal menu, offline con service worker, aree di tocco e contrasti su tutte le schermate); `ui-crea-test.py` ora crea i 300 elementi con `tests/testdata.js`. Tutti gli altri test verdi. Non ci sono altri passi previsti: restano solo le prove sul telefono e i difetti noti elencati nel Passo 13.
 - PASSO 6 (Importa PDF squadra): CHIUSO. Provato da Manu sul telefono con PDF veri, funziona tutto bene (23/11/2026).
 
@@ -494,3 +495,19 @@ VERIFICA SUL TELEFONO (Passo 13), prova completa offline:
 3. Cartella dedicata: se in Altro c'e' "Cartella di salvataggio", sceglila e salva uno sticker: compare nella cartella e nel selettore di InShot; se non c'e' (probabile su Android) si resta su Download.
 4. Log di una partita > menu ⋮ > "Esporta PDF…" > "Salva in Download": apri il PDF e controlla iniziativa, ordine di attivazione, danni, ferite rimaste, incapacitati, punti. Poi "Condividi…" verso Drive/e-mail/WhatsApp: il PDF arriva con il nome BR_log_….pdf.
 5. Menu Altro e Libreria: tocchi comodi, testi leggibili con accenti giusti.
+
+### Passo 14 – Colori dei team (FATTO, da provare sul telefono)
+
+Realizzato (23/11/2026, CACHE_VERSION 'v19'). Richiesta di Vando: due colori diversi per i due team nell'interfaccia, per vedere a colpo d'occhio chi fa cosa. Decisioni: i colori valgono anche nel PDF del log; si scelgono per partita (tavolozza modificabile); predefiniti blu (giocatore/team 1) e arancione (team 2).
+
+- Dati: `matches.sides[i].color` = chiave della tavolozza ('blu', 'arancione', 'verde', 'rosso', 'viola', 'giallo', 'azzurro', 'rosa'); entra nel backup con la tabella matches. Partite vecchie senza colore: predefiniti. `ML.teamColors(match)` (js/matchlog.js, puro) restituisce sempre due colori diversi (se coincidono, il secondo passa al primo libero) e ignora chiavi sconosciute.
+- Interfaccia: variabili CSS `--t0/--t1` sul documento mentre una partita e' aperta (tolte all'uscita), classi `tm0/tm1` (`--team`) su punti, rosa (intestazioni e righe), cronologia (barra a sinistra), recenti, pannello di scelta operativo e righe della lista partite. Segno ● (team 1) e ◆ (team 2) accanto ai nomi, cosi' la distinzione non dipende solo dal colore (daltonismo). Tutti i colori della tavolozza hanno contrasto >= 4,5:1 sullo sfondo scuro (test).
+- Scelta: nel form "Nuova partita" (colori precompilati blu/arancione) e nel menu partita > "Nome, missione, giocatori…". Due colori uguali: avviso "I due team devono avere colori diversi" e niente salvataggio.
+- PDF: `js/pdfwrite.js` opzione `bar` (barretta colorata a sinistra di ogni riga); `logexport.js` usa le varianti `pdf` piu' scure per la carta bianca: intestazioni dei lati, riga "Punti:", rosa e ogni voce con barra del team (attivazione e punti anche in testo colorato). Titoli dei turni neutri.
+- Limiti: solo due team; la tavolozza e' fissa (8 colori, nessun colore libero); gli sticker generati dal log non usano i colori dei team.
+
+VERIFICA SUL TELEFONO (Passo 14):
+1. Aggiorna l'app (Altro > App: "Versione dell'app: v19"). Apri una partita nel Log: punteggio, rosa e cronologia hanno blu per il team 1 e arancione per il team 2, con ● e ◆.
+2. Menu ⋮ > "Nome, missione, giocatori…": cambia i colori (es. verde e viola); provare lo stesso colore due volte deve dare errore. Lista partite: i nomi dei giocatori hanno i colori scelti.
+3. Nuova partita: i colori sono gia' blu e arancione.
+4. Menu ⋮ > "Esporta PDF…": barrette e punti colorati come sullo schermo; stampa o guarda in bianco e nero: i segni ●/◆ e i nomi bastano a distinguere.

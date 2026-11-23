@@ -190,5 +190,34 @@ check(true, 'ogni riga del riepilogo testuale e\' anche nel PDF');
   check(lastOfPage.every((l) => !/^Turning Point \d+$/.test(l.trim()) && !/^Iniziativa:/.test(l.trim())), 'nessun titolo di turno orfano a fondo pagina');
 }
 
+// ---------- colori dei team (Passo 14) ----------
+{
+  const k = (m) => ML.teamColors(m).map((c) => c.key);
+  eq(k({ sides: [{}, {}] }), ['blu', 'arancione'], 'colori predefiniti: blu e arancione');
+  eq(k({}), ['blu', 'arancione'], 'partita senza lati: predefiniti');
+  eq(k({ sides: [{ color: 'verde' }, { color: 'viola' }] }), ['verde', 'viola'], 'colori scelti');
+  eq(k({ sides: [{ color: 'verde' }, {}] }), ['verde', 'arancione'], 'un solo colore scelto: l\'altro resta predefinito');
+  eq(k({ sides: [{ color: 'arancione' }, {}] })[0] !== k({ sides: [{ color: 'arancione' }, {}] })[1], true, 'i due colori sono sempre diversi (anche se il predefinito coincide)');
+  eq(k({ sides: [{ color: 'rosso' }, { color: 'rosso' }] })[0] !== k({ sides: [{ color: 'rosso' }, { color: 'rosso' }] })[1], true, 'stessa scelta su entrambi i lati: il secondo cambia');
+  eq(k({ sides: [{ color: 'fucsia' }, { color: '#fff' }] }), ['blu', 'arancione'], 'chiave sconosciuta: predefinito');
+  check(ML.TEAM_COLORS.every((c) => /^#[0-9a-f]{6}$/.test(c.hex) && c.pdf.length === 3), 'palette valida');
+  // contrasto della versione per schermo scura (#1c1c1c) >= 4,5 e della versione PDF su carta bianca >= 3
+  const L = (r, g, b) => { const f = (v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4); return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  const cr = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  const bg = L(28 / 255, 28 / 255, 28 / 255);
+  check(ML.TEAM_COLORS.every((c) => cr(L(parseInt(c.hex.slice(1, 3), 16) / 255, parseInt(c.hex.slice(3, 5), 16) / 255, parseInt(c.hex.slice(5, 7), 16) / 255), bg) >= 4.5), 'ogni colore ha contrasto >= 4,5:1 sullo sfondo scuro');
+  check(ML.TEAM_COLORS.every((c) => cr(L(...c.pdf), 1) >= 3), 'ogni colore PDF ha contrasto >= 3:1 sulla carta bianca');
+  // nel PDF i colori scelti compaiono come operazioni di colore
+  const raw = (m) => Buffer.from(buildLogPdf(m, units, events, rep, { sideName })).toString('latin1');
+  const op = (c) => c.pdf.map((v) => (Math.round(v * 100) / 100).toString()).join(' ') + ' rg';
+  const [c0, c1] = ML.teamColors(match);
+  check(raw(match).includes(op(c0)) && raw(match).includes(op(c1)), 'PDF: colori predefiniti dei due team presenti');
+  const custom = { ...match, sides: [{ ...match.sides[0], color: 'verde' }, { ...match.sides[1], color: 'viola' }] };
+  const g = ML.TEAM_COLORS.find((c) => c.key === 'verde'), v = ML.TEAM_COLORS.find((c) => c.key === 'viola');
+  check(raw(custom).includes(op(g)) && raw(custom).includes(op(v)) && !raw(custom).includes(op(c0)), 'PDF: colori scelti al posto dei predefiniti');
+  const { pages: pp } = await readPdf(buildLogPdf(custom, units, events, rep, { sideName }));
+  check(pp[0].join(' ').includes('Warrior B (Vando) attiva'), 'PDF colorato: il testo si legge uguale');
+}
+
 console.log(fails ? `\n${fails} controlli FALLITI` : '\nTutti i controlli passati');
 process.exit(fails ? 1 : 0);

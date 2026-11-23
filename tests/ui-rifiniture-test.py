@@ -291,6 +291,7 @@ with sync_playwright() as pw:
       const atk = await m.addMatchEvent(mid, { type: 'attack', unitRef: b, targetRef: a, data: { weaponName: 'Power claw', source: act } });
       await m.addMatchEvent(mid, { type: 'damage', unitRef: b, targetRef: a, data: { amount: 4, source: atk } });
       await m.addMatchEvent(mid, { type: 'score', side: 1, data: { points: 2, reason: 'Obiettivo' } });
+      await m.addMatchEvent(mid, { type: 'activation', unitRef: a });
       return { mid, empty };
     }""")
 
@@ -358,6 +359,74 @@ with sync_playwright() as pw:
     open_menu_item(page, 'Esporta PDF…')
     page.locator('.sheet [data-cancel]').click()
     page.wait_for_selector('.sheet', state='detached')
+    # colori dei team (Passo 14)
+    print('3b) colori dei team: predefiniti, scelta per partita, lista, PDF')
+    page.goto(BASE + f"#/log?m={ids['mid']}")
+    page.wait_for_selector('.lg-top')
+    vars0 = page.evaluate("[getComputedStyle(document.documentElement).getPropertyValue('--t0').trim(), getComputedStyle(document.documentElement).getPropertyValue('--t1').trim()]")
+    check(vars0 == ['#4da3ff', '#ff9040'], 'predefiniti: blu e arancione: %r' % vars0)
+    sc = page.evaluate("[...document.querySelectorAll('.lg-side')].map((e) => [e.className, getComputedStyle(e.querySelector('b')).color])")
+    check(sc[0][0].endswith('tm0') and sc[1][0].endswith('tm1') and sc[0][1] != sc[1][1], 'punti dei due team in colori diversi: %r' % sc)
+    check(page.locator('.lg-roster-side.tm0 h3.team-h').count() == 1 and page.locator('.lg-roster-side.tm1 h3.team-h').count() == 1, 'rosa: intestazioni dei due team colorate')
+    page.click('[data-view="cron"]')
+    page.wait_for_selector('button.lg-ev')
+    n0 = page.locator('button.lg-ev.tm0').count(); n1 = page.locator('button.lg-ev.tm1').count()
+    check(n0 >= 1 and n1 >= 1 and page.locator('button.lg-ev .tmark').count() == n0 + n1, f'cronologia: {n0} voci del team 1, {n1} del team 2, tutte con il segno')
+    cols = page.evaluate("[...document.querySelectorAll('button.lg-ev')].map((e) => [e.className.match(/tm[01]/)?.[0], getComputedStyle(e).borderLeftColor])")
+    check(len({c[1] for c in cols if c[0] == 'tm0'}) == 1 and len({c[1] for c in cols if c[0] == 'tm1'}) == 1 and {c[1] for c in cols if c[0] == 'tm0'} != {c[1] for c in cols if c[0] == 'tm1'}, 'cronologia: stessa barra per lo stesso team, diversa tra team')
+    page.screenshot(path=f'{SHOTS}/6-colori-cronologia.png')
+    # scelta dei colori dal menu partita
+    def set_colors(c0, c1):
+        open_menu_item(page, 'Nome, missione, giocatori…')
+        page.wait_for_selector('.sheet [name="c0"]')
+        page.locator('.sheet [name="c0"]').select_option(c0)
+        page.locator('.sheet [name="c1"]').select_option(c1)
+        page.locator('.sheet button[type=submit]').click()
+    set_colors('verde', 'verde')
+    check('colori diversi' in toast_text(page, 'I due team'), 'stesso colore rifiutato: ' + page.inner_text('#toast'))
+    page.wait_for_selector('.sheet', state='detached')
+    set_colors('verde', 'viola')
+    page.wait_for_selector('.sheet', state='detached')
+    page.wait_for_function("getComputedStyle(document.documentElement).getPropertyValue('--t0').trim() === '#4cd37b'")
+    check(page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--t1').trim()") == '#b794ff', 'colori scelti applicati: verde e viola')
+    saved = js(page, "async (m, id) => (await m.getMatch(id)).sides.map((s) => s.color)", ids['mid'])
+    check(saved == ['verde', 'viola'], 'salvati nella partita: %r' % saved)
+    page.reload()
+    page.wait_for_selector('.lg-top')
+    check(page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--t0').trim()") == '#4cd37b', 'dopo il ricaricamento i colori restano')
+    # il pannello di scelta usa gli stessi colori
+    page.click('[data-view="tavolo"]')
+    page.click('[data-act="activate"]')
+    page.wait_for_selector('.sheet [data-pick]')
+    pk = page.evaluate("[...document.querySelectorAll('.sheet .pick')].map((e) => [e.className.match(/tm[01]/)?.[0], getComputedStyle(e).borderLeftColor])")
+    check(all(c[0] in ('tm0', 'tm1') for c in pk) and len({c[1] for c in pk}) == 2, 'scelta operativo: barra del colore del team: %r' % pk)
+    page.screenshot(path=f'{SHOTS}/7-colori-scelta.png')
+    page.locator('.sheet [data-cancel]').click()
+    page.wait_for_selector('.sheet', state='detached')
+    # lista partite
+    page.goto(BASE + '#/log')
+    page.wait_for_selector('.lg-teams')
+    lt = page.evaluate("[...document.querySelectorAll('[data-list=match] li')].find((li) => li.textContent.includes('Finale')).querySelector('.lg-teams').innerHTML")
+    check('#4cd37b' in lt.lower() or 'rgb(76, 211, 123)' in lt, 'lista: giocatori nei colori della partita')
+    # PDF con i colori scelti
+    page.goto(BASE + f"#/log?m={ids['mid']}")
+    open_menu_item(page, 'Esporta PDF…')
+    with page.expect_download() as dlc:
+        page.locator('.sheet [data-pick="save"]').click()
+    raw = open(dlc.value.path(), 'rb').read().decode('latin1')
+    check('0.05 0.5 0.2 rg' in raw and '0.4 0.25 0.75 rg' in raw, 'PDF: colori verde e viola della partita')
+    # nuova partita dal form: colori predefiniti e controllo dei colori uguali
+    page.goto(BASE + '#/log')
+    page.wait_for_selector('[data-new]')
+    page.locator('[data-new]').click()
+    page.wait_for_selector('.sheet [data-pick]')
+    page.locator('.sheet [data-pick]').first.click()
+    page.wait_for_selector('.sheet [name="c0"]')
+    check(page.locator('.sheet [name="c0"]').input_value() == 'blu' and page.locator('.sheet [name="c1"]').input_value() == 'arancione', 'nuova partita: blu e arancione precompilati')
+    page.locator('.sheet [name="c1"]').select_option('blu')
+    page.locator('.sheet button[type=submit]').click()
+    check('colori diversi' in toast_text(page, 'I due team'), 'nuova partita: stesso colore rifiutato')
+    page.reload()
     # log vuoto
     page.goto(BASE + f"#/log?m={ids['empty']}")
     open_menu_item(page, 'Esporta PDF…')

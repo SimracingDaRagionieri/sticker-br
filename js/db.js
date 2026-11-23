@@ -1053,7 +1053,7 @@ export async function createMatch({ gameId, name = '', mission = '', sides, mode
   const game = gameId != null ? await db.games.get(gameId) : null;
   const sd = [0, 1].map((i) => {
     const s = (sides && sides[i]) || {};
-    return { player: String(s.player || '').trim(), factionId: s.factionId ?? null, factionName: String(s.factionName || '').trim() };
+    return { player: String(s.player || '').trim(), factionId: s.factionId ?? null, factionName: String(s.factionName || '').trim(), color: ML.teamColorKey(s.color) };
   });
   return db.matches.add({
     gameId: gameId ?? null, gameName: game ? game.name : '', name: String(name || '').trim(), mission: String(mission || '').trim(),
