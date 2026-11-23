@@ -8,7 +8,8 @@
 
 import * as D from '../db.js';
 import { renderSticker } from '../render.js';
-import { saveBlob, shareBlobs, stickerFilename } from '../export.js';
+import { shareBlobs, stickerFilename } from '../export.js';
+import { saveSticker, savedText } from '../folder.js';
 import { getLogItem, renderLogItem, itemActionText } from '../logsource.js';
 import { itemFilename, itemLabel, joinDamageLeft } from '../logsticker.js';
 import { queueButtonHTML, bindQueueButton } from './coda.js';
@@ -338,8 +339,7 @@ export async function render(el) {
         if (r === 'cancelled') used = false;
         else if (r === 'saved') toast('Condivisione non disponibile: salvato in Download');
       } else {
-        saveBlob(blob, name);
-        toast('Salvato in Download');
+        toast(savedText(await saveSticker(blob, name)));
       }
       // Gli sticker dal log non entrano nei recenti: il log non e' la Libreria.
       if (used && !fromLog) {

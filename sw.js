@@ -1,5 +1,5 @@
 // Service worker cache-first. Incrementa CACHE_VERSION a ogni modifica ai file.
-const CACHE_VERSION = 'v17';
+const CACHE_VERSION = 'v18';
 const CACHE_NAME = 'sbr-' + CACHE_VERSION;
 
 const ASSETS = [
@@ -18,9 +18,11 @@ const ASSETS = [
   './js/matchlog.js',
   './js/logsticker.js',
   './js/logsource.js',
+  './js/logexport.js',
+  './js/pdfwrite.js',
   './js/backuplib.js',
   './js/backup.js',
-  './js/testdata.js',
+  './js/folder.js',
   './js/ui.js',
   './js/crop.js',
   './js/render.js',
@@ -65,6 +67,8 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING') self.skipWaiting();
+  // Altro > App: la pagina chiede la versione (CACHE_VERSION) con un canale dedicato.
+  if (event.data === 'GET_VERSION' && event.ports && event.ports[0]) event.ports[0].postMessage(CACHE_VERSION);
 });
 
 self.addEventListener('fetch', (event) => {

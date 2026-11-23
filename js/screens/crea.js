@@ -9,7 +9,8 @@
 import * as D from '../db.js';
 import { createLiveIndex, searchIndex, normalize } from '../search.js';
 import { renderStickerFor, stickerNameParts, isPngAction } from '../stickerinput.js';
-import { saveBlob, stickerFilename } from '../export.js';
+import { stickerFilename } from '../export.js';
+import { saveSticker, savedText } from '../folder.js';
 import { toast, parseHash, canGoBack } from '../app.js';
 import { esc, openSheet, closeSheet } from '../ui.js';
 import * as B from '../backup.js';
@@ -205,9 +206,9 @@ async function quickSave(item) {
   try {
     const { src, tpl } = await stickerFor(item);
     const blob = await renderStickerFor(src, tpl);
-    saveBlob(blob, stickerFilename(stickerNameParts(src)));
+    const saved = await saveSticker(blob, stickerFilename(stickerNameParts(src)));
     await D.recordUse({ unitId: item.unitId, weaponId: item.weaponId, actionId: item.actionId, templateId: tpl ? tpl.id : null });
-    toast('Salvato');
+    toast(saved.folder || saved.fellBack ? savedText(saved) : 'Salvato');
     if (ui.tab === 'recenti' && !ui.q) refreshWhenIdle();
   } catch (err) {
     console.error(err);

@@ -7,6 +7,8 @@ import { toast } from '../app.js';
 import { esc, menuSheet, confirmSheet, formSheet, pickSheet, keypadSheet, textSheet, openSheet, closeSheet } from '../ui.js';
 import * as LS from '../logsticker.js';
 import { generateForMatch } from '../logsource.js';
+import { buildLogPdf } from '../logexport.js';
+import { saveBlob, shareBlobs, logPdfFilename, fmtBytes } from '../export.js';
 import { queueButtonHTML, bindQueueButton } from './coda.js';
 
 let S = null; // stato della schermata aperta
@@ -26,8 +28,9 @@ export async function renderMatch(el, id, query) {
 
 async function reload() {
   if (!S) return;
+  const cur = S;
   const st = await D.getMatchState(S.id);
-  if (!st.match) return;
+  if (!st.match || S !== cur) return; // nel frattempo si e' lasciata la schermata (cleanup): niente da aggiornare
   S.match = st.match; S.units = st.units; S.events = st.events; S.rep = st.rep;
   if (S.cursor != null) S.cursor = Math.min(S.cursor, S.events.length);
 }
@@ -160,7 +163,7 @@ const undoDisabled = () => (S.cursor != null ? S.inserted === 0 : S.events.lengt
 function recentHTML() {
   const end = S.cursor != null ? S.cursor : S.events.length;
   const from = Math.max(0, end - 4);
-  if (end === 0) return '<p class="empty">Nessuna voce nel log.</p>';
+  if (end === 0) return '<p class="empty">Nessuna voce nel log. Tocca «Nuova attivazione» nel Tavolo per registrare la prima.</p>';
   const rows = [];
   for (let i = end - 1; i >= from; i--) {
     rows.push(`<li class="lg-recent"><span class="lg-seq">${S.events[i].seq}</span><span>${esc(ML.describeEvent(S.events, i, S.rep, S.units, describeOpts()))}</span></li>`);
@@ -180,7 +183,7 @@ function rosterHTML(here) {
           <span class="item-meta">${u.incapacitated ? 'incapacitato' : (u.max != null ? 'ferite' : 'ferite non tracciate')}</span>
           ${u.max != null ? `<span class="lg-bar"><i style="width:${Math.round(100 * u.left / u.max)}%"></i></span>` : ''}
           <span class="lg-wounds" data-wounds="${u.id}">${woundsBadge(u)}</span>
-        </button></li>`).join('')}</ul>` : '<p class="empty">Rosa vuota.</p>'}
+        </button></li>`).join('')}</ul>` : '<p class="empty">Rosa vuota. Aggiungi gli operativi con «+ Dalla squadra» o «+ A mano».</p>'}
       <div class="row">
         <button type="button" data-act="roster-faction" data-side="${side}">+ Dalla ${esc(((S.game && S.game.labels && S.game.labels.faction) || 'fazione')).toLowerCase()}</button>
         <button type="button" data-act="roster-manual" data-side="${side}">+ A mano</button>
@@ -192,7 +195,7 @@ function rosterHTML(here) {
 
 function cronHTML() {
   const { events, rep } = S;
-  if (!events.length) return '<p class="empty">Nessuna voce nel log.</p>';
+  if (!events.length) return '<p class="empty">Nessuna voce nel log. Tocca «Nuova attivazione» nel Tavolo per registrare la prima.</p>';
   const warn = new Map();
   rep.warnings.forEach((w) => { if (!warn.has(w.index)) warn.set(w.index, []); warn.get(w.index).push(w.message); });
   const groups = [];
@@ -554,6 +557,27 @@ async function showSummary() {
   textSheet({ title: 'Riepilogo', text: ML.summarize(S.match, S.units, S.events, S.rep, { sideName }) });
 }
 
+// "Esporta PDF…" (Passo 13): il log in un PDF (stesso contenuto del riepilogo, impaginato) da salvare in Download o
+// condividere con la share sheet di Android. Il PDF e' sempre in Download (la cartella dedicata e' solo per gli sticker).
+async function exportPdfFlow() {
+  if (!S.events.length) { toast('Il log è vuoto: non c\'è niente da esportare'); return; }
+  const blob = new Blob([buildLogPdf(S.match, S.units, S.events, S.rep, { sideName })], { type: 'application/pdf' });
+  const name = logPdfFilename(S.match.name || [0, 1].map(sideName).join(' vs '));
+  const v = await pickSheet({
+    title: 'Esporta il log in PDF',
+    hint: `${name} · ${fmtBytes(blob.size)}`,
+    options: [
+      { value: 'save', label: 'Salva in Download', primary: true },
+      { value: 'share', label: 'Condividi…', sub: 'Drive, e-mail, WhatsApp…' }
+    ]
+  });
+  if (!v) return;
+  if (v === 'save') { saveBlob(blob, name); toast(`Salvato ${name} in Download`); return; }
+  const r = await shareBlobs([blob], [name]);
+  if (r === 'saved') toast(`Condivisione non disponibile: salvato ${name} in Download`);
+  else if (r === 'shared') toast('PDF condiviso');
+}
+
 // "Genera sticker della partita" (Passo 11): spunte per tipo, poi li disegna in sequenza nell'ordine del log e li mette in
 // coda (nomi BR_<partita>_<nnn>_...png). Si puo' interrompere: quelli gia' in coda restano.
 async function generateFlow() {
@@ -619,6 +643,7 @@ async function matchMenu() {
       ? { label: 'Riapri la partita', run: () => run(async () => { await D.endMatch(S.id, false); }) }
       : { label: 'Termina la partita', run: () => run(async () => { await D.endMatch(S.id, true); }) },
     { label: 'Copia riepilogo', run: () => run(showSummary) },
+    { label: 'Esporta PDF…', run: () => run(exportPdfFlow) },
     { label: 'Genera sticker della partita…', run: () => run(generateFlow) },
     { label: 'Elimina partita', danger: true, run: async () => {
       const ok = await confirmSheet({ title: 'Eliminare la partita?', lines: [`Verranno eliminate ${S.events.length} voci e la rosa. Non si può annullare.`], confirmLabel: 'Elimina', danger: true });

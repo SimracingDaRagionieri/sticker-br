@@ -25,6 +25,24 @@ export function logStickerFilename(matchName, seq, parts) {
   return ['BR', slug(matchName) || 'partita', n, ...body].join('_') + '.png';
 }
 
+// Dimensione leggibile: 1,5 MB (virgola italiana).
+export function fmtBytes(n) {
+  if (n == null || n === '') return '—';
+  n = Number(n);
+  if (!Number.isFinite(n) || n < 0) return '—';
+  const u = ['byte', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  const v = i === 0 ? String(Math.round(n)) : n.toFixed(n >= 100 ? 0 : 1).replace('.', ',');
+  return `${v} ${u[i]}`;
+}
+
+// Log della partita in PDF (Passo 13): BR_log_<partita>_AAAAMMGG.pdf (data = giorno dell'esportazione).
+export function logPdfFilename(matchName, d = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `BR_log_${slug(matchName) || 'partita'}_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}.pdf`;
+}
+
 export function saveBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

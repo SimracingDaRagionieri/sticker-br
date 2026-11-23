@@ -1,8 +1,9 @@
-// TEMPORANEO (Passo 7, da rimuovere al Passo 11): dati di prova per controllare la velocita' di Crea.
+// Solo per i test (spostato da js/ al Passo 13, non fa parte dell'app): dati di prova per controllare la velocita' di Crea.
+// Uso: `await (await import('/tests/testdata.js')).generateTestData()` dentro la pagina servita dal test.
 // Nomi inventati, nessun contenuto di giochi reali. Tutto sta in un gioco marcato `test: 1`, quindi
 // "Elimina dati di prova" lo toglie con la normale eliminazione a cascata e poi ripulisce recenti e preferiti.
 
-import { db, comboKey, deleteGame, getSetting, setSetting, getDefaultTemplate } from './db.js';
+import { db, comboKey, deleteGame, getSetting, setSetting, getDefaultTemplate } from '../js/db.js';
 
 const ROLES = ['Warden', 'Sentinel', 'Marauder', 'Vanguard', 'Reaver', 'Scout', 'Harrier', 'Bulwark', 'Pathfinder', 'Zealot'];
 const KINDS = ['Captain', 'Gunner', 'Medic', 'Sniper', 'Breacher', 'Fighter', 'Heavy', 'Leader', 'Operator', 'Driver'];

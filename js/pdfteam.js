@@ -289,7 +289,7 @@ function readTable(lines, h, region, ctx) {
     for (const t of arr) {
       const n = near(t.y);
       if (!n) { dropIdx.add(t.lineIdx); continue; }
-      if (n.tie) warn('ambiguous-row', page.num, 'Riga arma ambigua: il testo e\' a pari distanza da due righe', t.text);
+      if (n.tie) warn('ambiguous-row', page.num, 'Riga arma ambigua: il testo è a pari distanza da due righe', t.text);
       assigned[rows.indexOf(n.row)][key].push(t);
     }
   };
@@ -312,7 +312,7 @@ function readTable(lines, h, region, ctx) {
     if (!name) { suspect.push('name'); warn('weapon-name', page.num, 'Riga arma senza nome', rowText); }
     for (const c of ['atk', 'hit', 'dmg']) {
       if (w[c] == null) { suspect.push(c); warn('weapon-missing', page.num, `Arma "${name || '?'}": valore ${D.cols[c]} mancante`, rowText); }
-      else if (!FORMAT[c].test(w[c])) { suspect.push(c); warn('weapon-format', page.num, `Arma "${name || '?'}": ${D.cols[c]} "${w[c]}" non e' nel formato atteso`, rowText); }
+      else if (!FORMAT[c].test(w[c])) { suspect.push(c); warn('weapon-format', page.num, `Arma "${name || '?'}": ${D.cols[c]} "${w[c]}" non è nel formato atteso`, rowText); }
     }
     // riquadro della riga (punti PDF)
     const its = [...r.items, ...names.flatMap((n) => n.items), ...wrs.flatMap((n) => n.items)];
@@ -475,7 +475,7 @@ export function parseTeam(rawPages, { lang = 'en', name = null, title = '' } = {
     // controlli di coerenza per operativo
     for (const k of ['apl', 'move', 'save', 'wounds']) {
       if (op.stats[k] == null) warn('stat-missing', first.page, `"${op.name}": statistica ${D.stats[k]} non trovata`, op.name);
-      else if (!FORMAT[k].test(op.stats[k])) warn('stat-format', first.page, `"${op.name}": ${D.stats[k]} "${op.stats[k]}" non e' nel formato atteso`, op.name);
+      else if (!FORMAT[k].test(op.stats[k])) warn('stat-format', first.page, `"${op.name}": ${D.stats[k]} "${op.stats[k]}" non è nel formato atteso`, op.name);
     }
     if (!op.weapons.length && op.hadTable) warn('no-weapons', first.page, `"${op.name}": nessuna arma trovata`, op.name);
     const seen = new Set();
@@ -484,7 +484,7 @@ export function parseTeam(rawPages, { lang = 'en', name = null, title = '' } = {
       if (seen.has(kk)) warn('weapon-dup', first.page, `"${op.name}": arma "${displayWeaponName(w.name, w.mode)}" ripetuta`, displayWeaponName(w.name, w.mode));
       seen.add(kk);
     }
-    if (op.continues && group.length < 2) warn('back-missing', first.page, `"${op.name}": la carta indica che le regole continuano sul retro, ma il retro non e' stato trovato`, op.name);
+    if (op.continues && group.length < 2) warn('back-missing', first.page, `"${op.name}": la carta indica che le regole continuano sul retro, ma il retro non è stato trovato`, op.name);
     operatives.push(op);
   }
 
@@ -496,7 +496,7 @@ export function parseTeam(rawPages, { lang = 'en', name = null, title = '' } = {
   if (!fname) warn('faction-name', 0, 'Nome della squadra non rilevato: scrivilo nella revisione', '');
 
   // ----- controlli globali -----
-  if (cards.length && !anyBold) warn('no-bold', 0, 'Nessun testo in grassetto rilevato nel PDF: titoli di abilita\' e azioni non riconoscibili', '');
+  if (cards.length && !anyBold) warn('no-bold', 0, 'Nessun testo in grassetto rilevato nel PDF: titoli di abilità e azioni non riconoscibili', '');
   if (operatives.length && headerCount !== cards.length) warn('header-count', 0, `Intestazioni trovate ${headerCount}, carte lette ${cards.length}`, '');
   if (operatives.length) {
     if (!factionRule.length) warn('no-faction-rule', 0, 'Nessuna regola di fazione trovata', '');

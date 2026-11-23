@@ -1,44 +1,25 @@
-import { saveBlob, shareBlobs, timestamp } from '../export.js';
+import { fmtBytes } from '../export.js';
 import { toast } from '../app.js';
 import * as D from '../db.js';
 import { confirmSheet, noticeSheet } from '../ui.js';
 import * as B from '../backup.js';
-import { generateTestData, deleteTestData, testDataStats } from '../testdata.js';
+import * as F from '../folder.js';
 import { queueButtonHTML, bindQueueButton, queueActionsHTML, bindQueueActions } from './coda.js';
 
-// Disegna fuori dal DOM a pixel reali 1080x360, sfondo trasparente.
-function drawTestSticker() {
-  const W = 1080, H = 360;
-  const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H;
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, W, H);
-
-  ctx.fillStyle = 'rgba(0,0,0,0.7)';
-  ctx.beginPath();
-  ctx.roundRect(24, 24, W - 48, H - 48, 40);
-  ctx.fill();
-
-  ctx.font = '700 150px system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = 14;
-  ctx.strokeStyle = '#000000';
-  ctx.strokeText('TEST STICKER', W / 2, H / 2);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText('TEST STICKER', W / 2, H / 2);
-  return canvas;
-}
-
-function makeBlob() {
-  return new Promise((resolve, reject) => {
-    drawTestSticker().toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob fallito'))), 'image/png');
+// Versione dell'app = CACHE_VERSION del service worker che controlla la pagina (che e' anche quello che ha in cache i file).
+function appVersion() {
+  return new Promise((resolve) => {
+    const c = navigator.serviceWorker && navigator.serviceWorker.controller;
+    if (!c) { resolve(null); return; }
+    const ch = new MessageChannel();
+    const t = setTimeout(() => resolve(null), 2000);
+    ch.port1.onmessage = (e) => { clearTimeout(t); resolve(typeof e.data === 'string' ? e.data : null); };
+    c.postMessage('GET_VERSION', [ch.port2]);
   });
 }
 
 export function render(el) {
+  const dirOk = F.folderSupported();
   el.innerHTML = `
     <div class="title-row"><h1>Altro</h1>${queueButtonHTML()}</div>
     <h2>Backup</h2>
@@ -57,29 +38,29 @@ export function render(el) {
     <p class="meta" id="q-info">Controllo…</p>
     ${queueActionsHTML()}
     <div class="row"><a class="btn btn-link" href="#/coda">Apri la coda</a></div>
-    <p class="meta">Salva tutti scarica un file ogni 400 ms in Download (Chrome può chiedere una volta il permesso per più download). Condividi tutti apre un'unica condivisione con tutti i file.</p>
-    <h2>Test esportazione</h2>
-    <p>Salva il PNG di prova, poi in InShot apri Sticker → personalizzato e controlla che si veda sul video con lo sfondo trasparente.</p>
-    <div class="checker"><img id="test-preview" alt="Anteprima sticker di prova"></div>
+    <p class="meta">Salva tutti scarica un file ogni 400 ms in Download (Chrome può chiedere una volta il permesso per più download). Condividi tutti apre un'unica condivisione con tutti i file. Per InShot prendi gli sticker dalla Galleria o da Google Foto, non da WhatsApp o Telegram (perdono la trasparenza).</p>
+    ${dirOk ? `<h2>Cartella di salvataggio</h2>
+    <p class="meta" id="dir-info" role="status">Controllo…</p>
     <div class="row">
-      <button id="btn-save" class="primary" type="button">Salva PNG di prova</button>
-      <button id="btn-share" type="button">Condividi PNG di prova</button>
+      <button id="dir-pick" type="button">Scegli la cartella…</button>
+      <button id="dir-clear" type="button" hidden>Usa Download</button>
     </div>
-    <p class="meta">Il file va nella cartella Download. Per InShot usa la Galleria o Google Foto, non WhatsApp o Telegram (perdono la trasparenza).</p>
-    <h2>Archivio immagini</h2>
+    <p class="meta">Gli sticker PNG vanno in questa cartella invece che in Download. Se il permesso manca o la cartella non è più scrivibile, l'app salva in Download e lo dice. Backup e PDF del log vanno sempre in Download.</p>` : ''}
+    <h2>Spazio e memoria</h2>
+    <p class="meta" id="st-usage">Calcolo…</p>
+    <p class="meta" id="st-persist">Controllo…</p>
+    <div class="row"><button id="st-persist-btn" type="button" hidden>Richiedi la memoria persistente</button></div>
     <p class="meta" id="img-stats">Calcolo…</p>
-    <h2>Dati di prova <span class="meta">(temporaneo)</span></h2>
-    <p class="meta">Per controllare Crea con tanti elementi: crea un gioco «Prova» con 100 miniature, 160 armi e 40 azioni inventate, più recenti e preferiti. «Elimina» toglie solo quelli.</p>
-    <p class="meta" id="test-stats">Controllo…</p>
-    <div class="row">
-      <button id="btn-gen" type="button">Genera 300 elementi di prova</button>
-      <button id="btn-del" type="button" class="danger">Elimina dati di prova</button>
-    </div>
+    <h2>App</h2>
+    <p class="meta" id="app-version">Controllo…</p>
+    <div class="row"><button id="app-update" type="button">Cerca aggiornamenti</button></div>
   `;
 
   bindQueueButton(el);
   bindQueueActions(el);
   bindBackup(el);
+  if (dirOk) bindFolder(el);
+  bindStorage(el);
   const qinfo = el.querySelector('#q-info');
   const updQ = async () => {
     if (!el.isConnected) { window.removeEventListener('sbr-queue', updQ); return; }
@@ -87,55 +68,89 @@ export function render(el) {
   };
   window.addEventListener('sbr-queue', updQ);
   updQ();
+}
 
-  const tstats = el.querySelector('#test-stats');
-  const btnGen = el.querySelector('#btn-gen');
-  const btnDel = el.querySelector('#btn-del');
-  async function refreshTest() {
-    try {
-      const s = await D.ready().then(testDataStats);
-      tstats.textContent = s ? `Presenti: ${s.units} miniature, ${s.weapons} armi, ${s.actions} azioni.` : 'Nessun dato di prova.';
-      btnGen.disabled = !!s;
-      btnDel.disabled = !s;
-    } catch (err) { tstats.textContent = 'Database non disponibile.'; }
+// ---------- cartella dedicata (Passo 13) ----------
+
+function bindFolder(el) {
+  const info = el.querySelector('#dir-info');
+  const pick = el.querySelector('#dir-pick');
+  const clear = el.querySelector('#dir-clear');
+  async function refresh() {
+    let h = null;
+    try { h = await F.getFolder(); } catch { /* database non pronto */ }
+    clear.hidden = !h;
+    pick.textContent = h ? 'Cambia cartella…' : 'Scegli la cartella…';
+    if (!h) { info.textContent = 'Nessuna cartella scelta: gli sticker vanno in Download.'; return; }
+    const ok = await F.hasPermission(h, false);
+    info.textContent = `Cartella: «${h.name}». ` + (ok ? 'Permesso attivo.' : 'Il browser chiederà il permesso al prossimo salvataggio.');
   }
-  refreshTest();
-  btnGen.addEventListener('click', async () => {
-    btnGen.disabled = true;
-    tstats.textContent = 'Genero…';
-    try { await D.ready(); await generateTestData(); toast('Dati di prova creati'); } catch (err) { console.error(err); toast('Errore: ' + err.message); }
-    refreshTest();
+  refresh();
+  pick.addEventListener('click', async () => {
+    try {
+      const h = await F.chooseFolder();
+      if (h) toast(`Cartella scelta: «${h.name}»`);
+    } catch (err) {
+      console.error(err);
+      await noticeSheet({ title: 'Cartella non disponibile', lines: [err.message || String(err), 'Gli sticker restano in Download.'] });
+    }
+    refresh();
   });
-  btnDel.addEventListener('click', async () => {
-    const ok = await confirmSheet({ title: 'Eliminare i dati di prova?', lines: ['Verranno tolti solo il gioco «Prova» con tutto il suo contenuto e i recenti o preferiti che lo riguardano.'], confirmLabel: 'Elimina', danger: true });
-    if (!ok) return;
-    btnDel.disabled = true;
-    try { await deleteTestData(); toast('Dati di prova eliminati'); } catch (err) { console.error(err); toast('Errore: ' + err.message); }
-    refreshTest();
+  clear.addEventListener('click', async () => {
+    await F.clearFolder();
+    toast('Gli sticker vanno di nuovo in Download');
+    refresh();
+  });
+}
+
+// ---------- spazio, memoria persistente, versione (Passo 13) ----------
+
+function bindStorage(el) {
+  const usage = el.querySelector('#st-usage');
+  const persist = el.querySelector('#st-persist');
+  const pbtn = el.querySelector('#st-persist-btn');
+  const stats = el.querySelector('#img-stats');
+  const ver = el.querySelector('#app-version');
+
+  async function refreshUsage() {
+    try {
+      const e = await navigator.storage.estimate();
+      usage.textContent = `Spazio usato dall'app: ${fmtBytes(e.usage)}` + (e.quota ? ` su ${fmtBytes(e.quota)} disponibili.` : '.');
+    } catch { usage.textContent = 'Spazio usato: non disponibile su questo browser.'; }
+  }
+  async function refreshPersist() {
+    try {
+      const yes = await navigator.storage.persisted();
+      persist.textContent = yes ? 'Memoria persistente: sì (Android non cancella i dati se lo spazio scarseggia).'
+        : 'Memoria persistente: no (con poco spazio Android potrebbe cancellare i dati: fai un backup).';
+      pbtn.hidden = yes;
+    } catch { persist.textContent = 'Memoria persistente: non disponibile su questo browser.'; pbtn.hidden = true; }
+  }
+  refreshUsage();
+  refreshPersist();
+  pbtn.addEventListener('click', async () => {
+    try {
+      const ok = await navigator.storage.persist();
+      toast(ok ? 'Memoria persistente attivata' : 'Il browser non l\'ha concessa: fai un backup ogni tanto');
+    } catch (err) { toast('Errore: ' + err.message); }
+    refreshPersist();
   });
 
-  const stats = el.querySelector('#img-stats');
   D.ready().then(() => D.imageStats()).then((s) => {
-    stats.textContent = `Immagini: ${s.total} (miniature ${s.unit}, armi ${s.weapon}) · orfane: ${s.orphans}`;
+    stats.textContent = `Immagini salvate: ${s.total} (miniature ${s.unit}, armi ${s.weapon}) · orfane: ${s.orphans}`;
   }).catch(() => { stats.textContent = 'Database non disponibile.'; });
 
-  const img = el.querySelector('#test-preview');
-  makeBlob().then((b) => {
-    const url = URL.createObjectURL(b);
-    img.src = url;
-    img.onload = () => URL.revokeObjectURL(url);
+  appVersion().then((v) => {
+    ver.textContent = v ? `Versione dell'app: ${v}.` : 'Versione dell\'app: non disponibile (il servizio offline non è ancora attivo: riapri l\'app).';
   });
-
-  el.querySelector('#btn-save').addEventListener('click', async () => {
-    const blob = await makeBlob();
-    saveBlob(blob, `BR_test_${timestamp()}.png`);
-    toast('Salvato in Download');
-  });
-
-  el.querySelector('#btn-share').addEventListener('click', async () => {
-    const blob = await makeBlob();
-    const r = await shareBlobs([blob], [`BR_test_${timestamp()}.png`]);
-    if (r === 'saved') toast('Condivisione non disponibile: salvato in Download');
+  el.querySelector('#app-update').addEventListener('click', async () => {
+    try {
+      const reg = navigator.serviceWorker && (await navigator.serviceWorker.getRegistration());
+      if (!reg) { toast('Il servizio offline non è attivo'); return; }
+      await reg.update();
+      if (reg.waiting || reg.installing) toast('Nuova versione trovata: tocca «Aggiorna» nella barra in alto');
+      else toast('L\'app è già aggiornata');
+    } catch (err) { toast('Controllo non riuscito: ' + (err.message || err)); }
   });
 }
 

@@ -62,6 +62,11 @@ def rows(page):
     return page.locator('#crea-view .item').count()
 
 
+def gen(page):
+    """Crea i 300 elementi di prova con tests/testdata.js (non fa parte dell'app)."""
+    page.evaluate("async () => { const m = await import('./js/db.js'); await m.ready(); const t = await import('/tests/testdata.js'); await t.generateTestData(); }")
+
+
 def type_query(page, q):
     """Scrive la ricerca come un input e misura quanto passa prima che i risultati siano nel DOM."""
     return page.evaluate("""async (q) => {
@@ -97,16 +102,13 @@ with sync_playwright() as pw:
     ctx = browser.new_context(viewport={'width': 412, 'height': 900}, device_scale_factor=2, service_workers='block', accept_downloads=True)
     page = new_page(ctx)
     page.goto(BASE + '#/altro')
-    page.wait_for_selector('#btn-gen')
+    page.wait_for_selector('#bk-save')
+    check(page.locator('#btn-gen').count() == 0 and page.locator('#btn-save').count() == 0, 'in Altro non ci sono piu\' i dati di prova ne\' il test di esportazione')
 
-    print('1) dati di prova da Altro')
-    page.wait_for_function("document.querySelector('#test-stats').textContent.includes('Nessun dato')")
-    check(page.locator('#btn-del').is_disabled(), 'senza dati di prova "Elimina" e\' spento')
-    page.click('#btn-gen')
-    page.wait_for_function("document.querySelector('#test-stats').textContent.includes('Presenti')", timeout=60000)
-    txt = page.inner_text('#test-stats')
+    print('1) dati di prova creati dal test (tests/testdata.js)')
+    gen(page)
+    txt = js(page, "async (m) => { const t = await import('/tests/testdata.js'); const s = await t.testDataStats(); return s ? `${s.units} miniature, ${s.weapons} armi, ${s.actions} azioni` : ''; }")
     check('100 miniature, 160 armi, 40 azioni' in txt, 'generati 100 miniature, 160 armi, 40 azioni: ' + txt)
-    check(page.locator('#btn-gen').is_disabled(), 'con i dati presenti "Genera" e\' spento')
     c = js(page, """async (m) => ({ recents: await m.db.recents.count(), favs: (await m.getSetting('favCombos', [])).length,
       games: (await m.db.games.toArray()).filter(g => g.test === 1).length, images: await m.db.images.count() })""")
     print('  ', c)
@@ -331,9 +333,8 @@ with sync_playwright() as pw:
     downloads = []
     tp.on('download', lambda d: downloads.append(d))
     tp.goto(BASE + '#/altro')
-    tp.wait_for_selector('#btn-gen')
-    tp.click('#btn-gen')
-    tp.wait_for_function("document.querySelector('#test-stats').textContent.includes('Presenti')", timeout=60000)
+    tp.wait_for_selector('#bk-save')
+    gen(tp)
     tp.goto(BASE + '#/crea')
     tp.wait_for_selector('.stk')
     wait_stickers(tp, 4)
@@ -415,14 +416,10 @@ with sync_playwright() as pw:
     check(n < 28, f'recente con miniatura eliminata non compare piu\' ({n} invece di 28)')
     check(not page.errors, 'nessun errore in console finora: %r' % page.errors)
 
-    print('15) elimina dati di prova')
+    print('15) elimina dati di prova (deleteTestData del test)')
     page.goto(BASE + '#/altro')
-    page.wait_for_selector('#btn-del')
-    page.wait_for_function("!document.querySelector('#btn-del').disabled")
-    page.click('#btn-del')
-    page.wait_for_selector('.sheet')
-    page.click('.sheet [data-ok]')
-    page.wait_for_function("document.querySelector('#test-stats').textContent.includes('Nessun dato')", timeout=30000)
+    page.wait_for_selector('#bk-save')
+    page.evaluate("async () => { const m = await import('./js/db.js'); await m.ready(); const t = await import('/tests/testdata.js'); await t.deleteTestData(); }")
     c = js(page, """async (m) => ({ games: (await m.db.games.toArray()).filter(g => g.test === 1).length,
       units: await m.db.units.count(), weapons: await m.db.weapons.count(), actions: await m.db.actions.count(),
       images: await m.db.images.count(), recents: await m.db.recents.count(),

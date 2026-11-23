@@ -66,7 +66,7 @@ async function prepareIcon(file) {
 // PNG importato: i byte restano quelli del file (nessuna ricompressione); si legge solo la misura e si fa la miniatura.
 async function preparePng(file) {
   const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());
-  if (!isPngBytes(head)) throw new Error('non e\' un PNG');
+  if (!isPngBytes(head)) throw new Error('non è un PNG');
   const bitmap = await decode(file);
   try {
     return {

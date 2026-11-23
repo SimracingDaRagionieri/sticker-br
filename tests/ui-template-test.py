@@ -293,7 +293,7 @@ with sync_playwright() as pw:
     toast_has(page, 'eliminato')
     d = js(page, "async (m) => (await m.getSetting('defaultTemplates'))")
     check(d['activation'] == min(AT, ST) and d['action'] == AZ, f'eliminando il predefinito, il primo rimasto lo diventa: {d}')
-    check(js(page, "async (m, id) => { try { await m.deleteTemplate(id); return 'ok'; } catch (e) { return e.message; } }", AZ).startswith('Non si puo'), 'deleteTemplate rifiuta l\'ultimo del tipo')
+    check(js(page, "async (m, id) => { try { await m.deleteTemplate(id); return 'ok'; } catch (e) { return e.message; } }", AZ).startswith('Non si può'), 'deleteTemplate rifiuta l\'ultimo del tipo')
     js(page, "async (m, id) => { await m.setDefaultTemplate(id); }", AT)
 
     print('6) editor: anteprima fissa, fisarmonica, salvataggio automatico')
@@ -433,7 +433,7 @@ with sync_playwright() as pw:
     check(page.input_value('.sheet input[name="name"]') == 'DejaVuSerif Bold', 'nome proposto dal nome del file')
     page.fill('.sheet input[name="name"]', 'Oswald')
     sheet_click(page, 'Salva')
-    toast_has(page, 'gia\' incluso')
+    toast_has(page, 'già incluso')
     page.wait_for_selector('.sheet:has-text("Nome del font")')
     page.fill('.sheet input[name="name"]', 'Prova Serif')
     sheet_click(page, 'Salva')
@@ -449,7 +449,7 @@ with sync_playwright() as pw:
     txt = os.path.join(TMP, 'nota.txt')
     with open(txt, 'w') as f:
         f.write('ciao')
-    for path, nm, msg in [(bad, 'Rotto', 'non e\' un font valido'), (txt, 'Nota', 'Formato non supportato'), (ttf, 'prova serif', 'Esiste')]:
+    for path, nm, msg in [(bad, 'Rotto', 'non è un font valido'), (txt, 'Nota', 'Formato non supportato'), (ttf, 'prova serif', 'Esiste')]:
         with page.expect_file_chooser() as fc:
             page.click('[data-import-font]')
         fc.value.set_files(path)

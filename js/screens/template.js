@@ -147,7 +147,7 @@ async function renderList(el, my) {
           <li class="item">
             <div class="item-main"><span class="item-name" style="font-family:'${esc(f.family)}', sans-serif">${esc(f.family)}</span><span class="item-meta">${esc(f.format)}</span></div>
             <button type="button" class="kebab" data-font-menu="${f.id}" aria-label="Azioni per ${esc(f.family)}">⋮</button>
-          </li>`).join('') || '<li class="empty">Nessun font importato.</li>'}
+          </li>`).join('') || '<li class="empty">Nessun font importato. Tocca «Importa font» per aggiungere un file .ttf, .otf o .woff2.</li>'}
       </ul>
       <div class="row"><button type="button" data-import-font>Importa font</button></div>`;
 

@@ -269,16 +269,28 @@ function damageText(ev, d, nm) {
 
 // Riepilogo testuale copiabile della partita.
 export function summarize(match, units, events, rep, { sideName } = {}) {
+  const { head, entries, sn } = summaryEntries(match, units, events, rep, { sideName });
+  const lines = [head, ''];
+  for (const e of entries) lines.push(e.lead + e.text);
+  if (rep.warnings.length) lines.push('', `Avvisi: ${rep.warnings.length}`);
+  const sc = rep.score.map((p, s) => `${sn(s)} ${p}`).join(' - ');
+  lines.push('', `Punti: ${sc}`);
+  return lines.join('\n');
+}
+
+// Le voci del riepilogo, una per riga: { kind, lead (rientro), text, index } (kind = turn|activation|attack|action|damage|
+// incapacitated|score|note; per `turn` anche label = "Turning Point 2" e ini = testo dell'iniziativa). Attacco e danni
+// che ne derivano sono UNA riga. Le usano sia `summarize` (testo) sia l'esportazione in PDF (js/logexport.js).
+export function summaryEntries(match, units, events, rep, { sideName } = {}) {
   const sn = sideName || ((s) => (match.sides && match.sides[s] && (match.sides[s].player || match.sides[s].factionName)) || `Lato ${s + 1}`);
   const byId = new Map(units.map((u) => [u.id, u]));
   const nm = (id) => (id != null && byId.has(id) ? byId.get(id).name : '?');
   const turnLabel = match.turnLabel || 'Turno';
-  const head = [];
   const sides = match.sides || [];
   const title = match.name || sides.map((s) => s.player || s.factionName).join(' vs ');
-  head.push(`${title}${match.mission ? ' - ' + match.mission : ''}`);
+  const head = [`${title}${match.mission ? ' - ' + match.mission : ''}`];
   if (match.gameName) head.push(match.gameName);
-  const lines = [head.join(' | '), ''];
+  const entries = [];
   const damageBySource = new Map();
   events.forEach((e, i) => { if (e.type === 'damage' && e.data && e.data.source != null && e.id != null) { const a = damageBySource.get(e.data.source) || []; a.push(i); damageBySource.set(e.data.source, a); } });
   const used = new Set();
@@ -288,32 +300,27 @@ export function summarize(match, units, events, rep, { sideName } = {}) {
     const data = ev.data || {};
     if (ev.type === 'turn-start') {
       const t = rep.turns.find((x) => x.index === i);
-      const ini = data.initiative ? ` - iniziativa: ${initiativeText(data.initiative, sn)}` : '';
-      lines.push(`${turnLabel} ${t ? t.n : ''}${ini}`);
+      const ini = data.initiative ? initiativeText(data.initiative, sn) : '';
+      const label = `${turnLabel} ${t ? t.n : ''}`;
+      entries.push({ kind: 'turn', lead: '', text: `${label}${ini ? ` - iniziativa: ${ini}` : ''}`, label, ini, index: i });
       return;
     }
     if (ev.type === 'attack') {
       const dmgs = ev.id != null ? damageBySource.get(ev.id) || [] : [];
       const dice = data.dice && data.dice.text ? ` [${data.dice.text}]` : '';
-      let text = `   ${nm(ev.unitRef)} colpisce ${nm(ev.targetRef)} con ${data.weaponName || 'arma'}${dice}`;
+      let text = `${nm(ev.unitRef)} colpisce ${nm(ev.targetRef)} con ${data.weaponName || 'arma'}${dice}`;
       if (dmgs.length) {
         const parts = dmgs.map((k) => { used.add(k); return damageClause(events[k], rep.derived[k]); });
         text += ': ' + parts.join('; ');
       }
-      lines.push(text);
+      entries.push({ kind: 'attack', lead: '   ', text, index: i });
       return;
     }
-    if (ev.type === 'activation') { lines.push(` ${nm(ev.unitRef)} (${sn(byId.get(ev.unitRef)?.side ?? 0)}) attiva`); return; }
-    if (ev.type === 'action') {
-      lines.push('   ' + describeEvent(events, i, rep, units, { sideName: sn }));
-      return;
-    }
-    lines.push((ev.type === 'damage' || ev.type === 'incapacitated' ? '   ' : ' ') + describeEvent(events, i, rep, units, { sideName: sn }));
+    if (ev.type === 'activation') { entries.push({ kind: 'activation', lead: ' ', text: `${nm(ev.unitRef)} (${sn(byId.get(ev.unitRef)?.side ?? 0)}) attiva`, index: i }); return; }
+    const text = describeEvent(events, i, rep, units, { sideName: sn });
+    entries.push({ kind: ev.type, lead: ev.type === 'action' || ev.type === 'damage' || ev.type === 'incapacitated' ? '   ' : ' ', text, index: i });
   });
-  if (rep.warnings.length) lines.push('', `Avvisi: ${rep.warnings.length}`);
-  const sc = rep.score.map((p, s) => `${sn(s)} ${p}`).join(' - ');
-  lines.push('', `Punti: ${sc}`);
-  return lines.join('\n');
+  return { head: head.join(' | '), entries, sn };
 }
 
 function damageClause(ev, d) {

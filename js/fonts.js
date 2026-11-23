@@ -48,10 +48,10 @@ export async function importFont(file, family) {
   if (!format) throw new Error('Formato non supportato: usa .ttf, .otf, .woff2 o .woff');
   const blob = file.slice(0, file.size, 'font/' + (format === 'woff2' ? 'woff2' : format === 'woff' ? 'woff' : format === 'otf' ? 'otf' : 'ttf'));
   const name = String(family || '').replace(/["\\]/g, '').trim();
-  if (!name) throw new Error('Il nome non puo\' essere vuoto');
-  if (BUILTIN_FONTS.some((b) => b.toLowerCase() === name.toLowerCase())) throw new Error('Questo nome e\' di un font gia\' incluso');
+  if (!name) throw new Error('Il nome non può essere vuoto');
+  if (BUILTIN_FONTS.some((b) => b.toLowerCase() === name.toLowerCase())) throw new Error('Questo nome è di un font già incluso');
   const probe = { id: -1, family: name, blob };
-  try { await register(probe); } catch { throw new Error('Il file non e\' un font valido'); }
+  try { await register(probe); } catch { throw new Error('Il file non è un font valido'); }
   document.fonts.delete(loaded.get(-1)); loaded.delete(-1);
   const id = await D.addFont(name, blob, format);
   await register({ id, family: name, blob });

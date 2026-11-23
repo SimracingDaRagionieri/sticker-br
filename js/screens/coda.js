@@ -4,7 +4,8 @@
 // l'icona con il contatore.
 
 import * as D from '../db.js';
-import { saveBlob, shareBlobs } from '../export.js';
+import { shareBlobs } from '../export.js';
+import { saveStickers, savedText } from '../folder.js';
 import { toast, canGoBack } from '../app.js';
 import { esc, confirmSheet } from '../ui.js';
 
@@ -41,11 +42,8 @@ export function bindQueueButton(root) {
 export async function saveAll() {
   const items = await D.queueList();
   if (!items.length) { toast('La coda è vuota'); return 0; }
-  for (let i = 0; i < items.length; i++) {
-    saveBlob(items[i].blob, items[i].name);
-    if (i < items.length - 1) await new Promise((r) => setTimeout(r, SAVE_GAP_MS));
-  }
-  toast(`Salvati ${items.length} file in Download`);
+  const r = await saveStickers(items.map((i) => ({ blob: i.blob, name: i.name })), { gapMs: SAVE_GAP_MS });
+  toast(savedText(r));
   return items.length;
 }
 

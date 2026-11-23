@@ -136,7 +136,7 @@ export const byName = (a, b) => collator.compare(a.name, b.name);
 
 function cleanName(name) {
   const n = String(name ?? '').trim();
-  if (!n) throw new Error('Il nome non puo\' essere vuoto');
+  if (!n) throw new Error('Il nome non può essere vuoto');
   return n;
 }
 
@@ -381,7 +381,7 @@ const sameTplName = (a, b) => String(a).trim().toLowerCase() === String(b).trim(
 async function assertTemplateName(kind, name, exceptId = null) {
   const n = cleanName(name);
   const clash = (await listTemplates(kind)).find((t) => t.id !== exceptId && sameTplName(t.name, n));
-  if (clash) throw new Error('Esiste gia\' un template con questo nome');
+  if (clash) throw new Error('Esiste già un template con questo nome');
   return n;
 }
 
@@ -425,7 +425,7 @@ export async function deleteTemplate(id) {
     const t = await db.templates.get(id);
     if (!t) return;
     const same = await db.templates.where('kind').equals(t.kind).toArray();
-    if (same.length <= 1) throw new Error('Non si puo\' eliminare l\'ultimo template di questo tipo');
+    if (same.length <= 1) throw new Error('Non si può eliminare l\'ultimo template di questo tipo');
     await db.templates.delete(id);
     const s = await db.settings.get('defaultTemplates');
     const defs = (s && s.value) || {};
@@ -463,7 +463,7 @@ export const FONT_FORMATS = ['ttf', 'otf', 'woff2', 'woff'];
 export async function listFonts() { return (await db.fonts.toArray()).sort((a, b) => byName({ name: a.family }, { name: b.family })); }
 export async function addFont(family, blob, format) {
   const f = cleanName(family);
-  if ((await db.fonts.toArray()).some((x) => sameTplName(x.family, f))) throw new Error('Esiste gia\' un font con questo nome');
+  if ((await db.fonts.toArray()).some((x) => sameTplName(x.family, f))) throw new Error('Esiste già un font con questo nome');
   return db.fonts.add({ family: f, blob, format });
 }
 export const deleteFont = (id) => db.fonts.delete(id);
@@ -1090,7 +1090,7 @@ export async function duplicateMatchRoster(id) {
 // Aggiunge alla rosa. Se il nome esiste gia' nello stesso lato aggiunge un numero ("Intercessor 2").
 export async function addMatchUnit(matchId, { side, unitId = null, name, maxWounds = null, note = '' }) {
   const nm = String(name || '').trim();
-  if (!nm) throw new Error('Il nome non puo\' essere vuoto');
+  if (!nm) throw new Error('Il nome non può essere vuoto');
   return db.transaction('rw', db.matchUnits, async () => {
     const same = await db.matchUnits.where('matchId').equals(matchId).filter((u) => u.side === side).toArray();
     return db.matchUnits.add({ matchId, side, unitId, name: ML.uniqueRosterName(same.map((u) => u.name), nm), maxWounds: ML.parseWounds(maxWounds), note });
@@ -1110,7 +1110,7 @@ export async function addMatchUnitsFromFaction(matchId, side, unitIds) {
 
 export async function updateMatchUnit(id, changes) {
   const c = { ...changes };
-  if ('name' in c) { c.name = String(c.name || '').trim(); if (!c.name) throw new Error('Il nome non puo\' essere vuoto'); }
+  if ('name' in c) { c.name = String(c.name || '').trim(); if (!c.name) throw new Error('Il nome non può essere vuoto'); }
   if ('maxWounds' in c) c.maxWounds = ML.parseWounds(c.maxWounds);
   await db.transaction('rw', MATCH_TABLES(), async () => {
     const u = await db.matchUnits.get(id);

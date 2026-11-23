@@ -276,7 +276,7 @@ export async function cropToTemplate(source, box) {
   g.imageSmoothingQuality = 'high';
   g.drawImage(source, box.x, box.y, box.w, box.h, 0, 0, tw, th);
   const gray = imageDataToGray(g.getImageData(0, 0, tw, th));
-  if (!prepareTemplate(gray, 1)) throw new Error('il riquadro e\' quasi uniforme: includi bene l\'icona');
+  if (!prepareTemplate(gray, 1)) throw new Error('il riquadro è quasi uniforme: includi bene l\'icona');
   return grayToPngBlob(gray);
 }
 
