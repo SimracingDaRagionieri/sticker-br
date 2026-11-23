@@ -211,7 +211,8 @@ async function gamesScreen(ctx) {
   const labelFields = (labels = {}) => [
     { name: 'faction', label: 'Etichetta per le fazioni (es. Squadra, Esercito)', value: labels.faction ?? '', type: 'text' },
     { name: 'unit', label: 'Etichetta per le miniature (es. Operativo, Unità)', value: labels.unit ?? '', type: 'text' },
-    { name: 'weapon', label: 'Etichetta per le armi', value: labels.weapon ?? 'Arma', type: 'text' }
+    { name: 'weapon', label: 'Etichetta per le armi', value: labels.weapon ?? 'Arma', type: 'text' },
+    { name: 'turn', label: 'Etichetta per il turno (es. Turno, Turning Point)', value: labels.turn ?? 'Turno', type: 'text' }
   ];
 
   const wire = (root) => {
@@ -219,7 +220,7 @@ async function gamesScreen(ctx) {
     onAdd(root, 'game', async () => {
       const v = await formSheet({
         title: 'Nuovo gioco',
-        fields: [{ name: 'name', label: 'Nome del gioco', type: 'text', required: true }, ...labelFields({ faction: 'Fazione', unit: 'Unità', weapon: 'Arma' })]
+        fields: [{ name: 'name', label: 'Nome del gioco', type: 'text', required: true }, ...labelFields({ faction: 'Fazione', unit: 'Unità', weapon: 'Arma', turn: 'Turno' })]
       });
       if (!v) return;
       await guard(async () => { await D.addGame(v.name, v); ctx.refresh(); });

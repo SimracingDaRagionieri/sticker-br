@@ -255,3 +255,49 @@ details.tpl-line > summary { min-height: 48px; display: flex; align-items: cente
 .tpl-line-tools button { flex: 1; padding: 0 8px; }
 .tpl-line-tools button:disabled { opacity: .4; }
 .tpl-groups select { width: 100%; }
+
+/* ---------- Passo 10: Log della partita ---------- */
+.tabbar a { min-width: 0; }
+.lg-top { display: flex; align-items: center; gap: 4px; position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 4px 0; }
+.lg-back { width: 48px; min-height: 48px; display: flex; align-items: center; justify-content: center; font-size: 2rem; color: var(--text); text-decoration: none; flex: none; }
+.lg-mid { flex: 1; min-width: 0; }
+.lg-title { font-size: 1.1rem; font-weight: 600; overflow-wrap: anywhere; }
+.lg-sub { font-size: .8rem; color: var(--muted); }
+.lg-score { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 8px 0 12px; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.lg-side { flex: 1; display: flex; align-items: center; gap: 12px; min-width: 0; }
+.lg-side:first-child { justify-content: flex-end; text-align: right; }
+.lg-side b { font-size: 2.2rem; line-height: 1; color: var(--accent); }
+.lg-name { font-size: .9rem; color: var(--muted); overflow-wrap: anywhere; }
+.lg-dash { color: var(--muted); font-size: 1.6rem; }
+.lg-tabs { margin-bottom: 8px; }
+.lg-banner { display: flex; align-items: center; gap: 8px; margin: 8px 0; padding: 8px 8px 8px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.lg-banner span { flex: 1; font-size: .9rem; }
+.lg-banner button { min-height: 44px; padding: 0 14px; }
+.lg-alert { border-color: var(--accent); }
+.lg-big { margin: 12px 0; }
+button.lg-main { width: 100%; min-height: 72px; font-size: 1.3rem; }
+.lg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.lg-grid button { min-height: 56px; padding: 0 8px; }
+.lg-grid button:disabled { opacity: .4; }
+.lg-recent-list, .lg-ev-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.lg-recent { display: flex; gap: 10px; padding: 8px 12px; background: var(--panel); border-radius: 10px; font-size: .9rem; }
+.lg-seq { flex: none; min-width: 26px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.lg-roster-side h3 { margin: 16px 0 8px; font-size: 1rem; }
+button.lg-unit { position: relative; text-align: left; border: 0; background: transparent; font: inherit; padding-right: 72px; overflow: hidden; }
+button.lg-unit.out .item-name { text-decoration: line-through; color: var(--muted); }
+.lg-wounds { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 1.2rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.lg-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: var(--line); }
+.lg-bar i { display: block; height: 100%; background: var(--accent); }
+.lg-turn-h { margin: 20px 0 8px; font-size: 1rem; }
+button.lg-ev { display: flex; gap: 10px; width: 100%; min-height: 48px; padding: 10px 12px; text-align: left; align-items: flex-start; font-size: .95rem; }
+button.lg-ev.sub { margin-left: 20px; width: calc(100% - 20px); background: transparent; }
+button.lg-ev.warn { border-color: #d64545; }
+.lg-txt { flex: 1; overflow-wrap: anywhere; }
+.lg-wtxt { display: block; margin-top: 4px; color: #ff9b9b; font-size: .8rem; }
+.pick { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; padding-top: 8px; padding-bottom: 8px; }
+.pick-sub { color: var(--muted); font-size: .78rem; }
+.pick.primary .pick-sub { color: #333; }
+.keypad-display { margin: 8px 0 12px; padding: 12px; text-align: center; font-size: 3rem; font-weight: 600; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; font-variant-numeric: tabular-nums; }
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.keypad button { min-height: 60px; font-size: 1.5rem; padding: 0; }
+.copy-area { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 12px; font: .85rem/1.4 ui-monospace, monospace; }

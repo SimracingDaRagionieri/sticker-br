@@ -7,6 +7,7 @@ const routes = {
   crea: () => import('./screens/crea.js'),
   libreria: () => import('./screens/libreria.js'),
   template: () => import('./screens/template.js'),
+  log: () => import('./screens/log.js'),
   altro: () => import('./screens/altro.js')
 };
 

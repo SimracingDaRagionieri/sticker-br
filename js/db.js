@@ -36,6 +36,25 @@ db.version(2).stores({
   rules: '++id, factionId, kind, name'
 });
 
+// Versione 3 (Passo 10): log della partita. Ripete tutte le tabelle della v2.
+db.version(3).stores({
+  games: '++id, name',
+  factions: '++id, gameId, name',
+  units: '++id, factionId, gameId, name, fav, lastUsed',
+  weapons: '++id, factionId, *unitIds, name, fav, lastUsed',
+  actions: '++id, gameId, name, fav, lastUsed',
+  images: '++id, kind, cardId',
+  cards: '++id, factionId, createdAt',
+  templates: '++id, kind',
+  fonts: '++id, family',
+  recents: '++id, &key, usedAt',
+  settings: 'key',
+  rules: '++id, factionId, kind, name',
+  matches: '++id, gameId, status, startedAt',
+  matchUnits: '++id, matchId, side',
+  matchEvents: '++id, matchId, [matchId+seq]'
+});
+
 // ---------- utilita' ----------
 
 const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
@@ -47,7 +66,7 @@ function cleanName(name) {
   return n;
 }
 
-const DEFAULT_LABELS = { faction: 'Fazione', unit: 'Unità', weapon: 'Arma' };
+const DEFAULT_LABELS = { faction: 'Fazione', unit: 'Unità', weapon: 'Arma', turn: 'Turno' };
 function cleanLabels(labels = {}) {
   const out = {};
   for (const k of Object.keys(DEFAULT_LABELS)) out[k] = String(labels[k] ?? '').trim() || DEFAULT_LABELS[k];
@@ -61,9 +80,9 @@ export const WEAPON_KINDS = ['ranged', 'melee', 'other'];
 // ---------- primo avvio ----------
 
 const SEED_GAMES = [
-  { name: 'Kill Team', labels: { faction: 'Squadra', unit: 'Operativo', weapon: 'Arma' } },
-  { name: 'Warhammer 40,000', labels: { faction: 'Esercito', unit: 'Unità', weapon: 'Arma' } },
-  { name: 'The Old World', labels: { faction: 'Esercito', unit: 'Unità', weapon: 'Arma' } }
+  { name: 'Kill Team', labels: { faction: 'Squadra', unit: 'Operativo', weapon: 'Arma', turn: 'Turning Point' } },
+  { name: 'Warhammer 40,000', labels: { faction: 'Esercito', unit: 'Unità', weapon: 'Arma', turn: 'Turno' } },
+  { name: 'The Old World', labels: { faction: 'Esercito', unit: 'Unità', weapon: 'Arma', turn: 'Turno' } }
 ];
 
 // Template predefiniti (tabella templates). Config come in SPEC.md sezione 2.
@@ -130,6 +149,7 @@ async function init() {
   });
   await seedTemplates();
   await seedActions();
+  await migrateTurnLabels();
   if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
     try {
       if (first || !(await navigator.storage.persisted())) await navigator.storage.persist();
@@ -178,6 +198,23 @@ async function seedTemplates() {
     }
   });
 }
+
+// Una sola volta (settings.turnLabelsRev, Passo 10): `games.labels.turn` ai giochi che non ce l'hanno
+// ("Turning Point" per i giochi chiamati Kill Team, "Turno" per gli altri). Non tocca chi l'ha gia'.
+async function migrateTurnLabels() {
+  await db.transaction('rw', db.games, db.settings, async () => {
+    if (await db.settings.get('turnLabelsRev')) return;
+    for (const g of await db.games.toArray()) {
+      if (g.labels && g.labels.turn) continue;
+      const turn = sameName(g.name, 'Kill Team') ? 'Turning Point' : 'Turno';
+      await db.games.update(g.id, { labels: { ...DEFAULT_LABELS, ...(g.labels || {}), turn } });
+    }
+    await db.settings.put({ key: 'turnLabelsRev', value: 1 });
+  });
+}
+
+// Etichetta del turno di un gioco ("Turno" se il gioco non ce l'ha: giochi creati prima del Passo 10).
+export const turnLabelOf = (game) => (game && game.labels && game.labels.turn) || 'Turno';
 
 // Una sola volta (settings.seededActions): azioni generate di Kill Team. Se il gioco "Kill Team" non c'e' (eliminato o
 // rinominato) non si crea nulla; i nomi gia' presenti (nel gioco o tra le globali) non si duplicano.
@@ -859,4 +896,213 @@ export async function saveTeam(opts) {
     sum.rules = rows.length;
   });
   return sum;
+}
+
+
+// ---------- log della partita (Passo 10) ----------
+// Tabelle v3: matches, matchUnits (rosa), matchEvents (seq = ordine). Lo stato si ricostruisce con js/matchlog.js.
+// Il log e' indipendente dal resto: nomi di gioco, squadra, operativi, azioni e armi sono COPIATI nelle righe,
+// quindi eliminare giochi/fazioni/miniature/azioni/armi non tocca il log (i riferimenti mancanti si ignorano).
+
+import * as ML from './matchlog.js';
+
+const MATCH_TABLES = () => [db.matches, db.matchUnits, db.matchEvents];
+
+export async function listMatches() {
+  return (await db.matches.toArray()).sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+}
+export const getMatch = (id) => db.matches.get(id);
+export async function listMatchUnits(matchId) {
+  return (await db.matchUnits.where('matchId').equals(matchId).toArray()).sort((a, b) => a.side - b.side || a.id - b.id);
+}
+export async function listMatchEvents(matchId) {
+  return (await db.matchEvents.where('matchId').equals(matchId).toArray()).sort((a, b) => a.seq - b.seq);
+}
+
+// sides: [{ player, factionId|null, factionName }, { ... }]. mode: 'live' | 'rebuild'.
+export async function createMatch({ gameId, name = '', mission = '', sides, mode = 'live' }) {
+  const game = gameId != null ? await db.games.get(gameId) : null;
+  const sd = [0, 1].map((i) => {
+    const s = (sides && sides[i]) || {};
+    return { player: String(s.player || '').trim(), factionId: s.factionId ?? null, factionName: String(s.factionName || '').trim() };
+  });
+  return db.matches.add({
+    gameId: gameId ?? null, gameName: game ? game.name : '', name: String(name || '').trim(), mission: String(mission || '').trim(),
+    status: 'live', mode: mode === 'rebuild' ? 'rebuild' : 'live', startedAt: Date.now(), endedAt: null, sides: sd, notes: '',
+    turnLabel: turnLabelOf(game), dismissed: []
+  });
+}
+
+export async function updateMatch(id, changes) {
+  await db.matches.update(id, changes);
+}
+
+export async function deleteMatch(id) {
+  await db.transaction('rw', MATCH_TABLES(), async () => {
+    await db.matchEvents.where('matchId').equals(id).delete();
+    await db.matchUnits.where('matchId').equals(id).delete();
+    await db.matches.delete(id);
+  });
+}
+
+// Nuova partita con la stessa rosa (ferite piene, nessun evento).
+export async function duplicateMatchRoster(id) {
+  return db.transaction('rw', MATCH_TABLES(), async () => {
+    const m = await db.matches.get(id);
+    if (!m) return null;
+    const { id: _drop, ...rest } = m;
+    const newId = await db.matches.add({ ...rest, name: m.name ? `${m.name} (copia)` : '', status: 'live', startedAt: Date.now(), endedAt: null, notes: '', dismissed: [] });
+    const units = await db.matchUnits.where('matchId').equals(id).toArray();
+    for (const u of units) { const { id: _u, ...r } = u; await db.matchUnits.add({ ...r, matchId: newId }); }
+    return newId;
+  });
+}
+
+// Aggiunge alla rosa. Se il nome esiste gia' nello stesso lato aggiunge un numero ("Intercessor 2").
+export async function addMatchUnit(matchId, { side, unitId = null, name, maxWounds = null, note = '' }) {
+  const nm = String(name || '').trim();
+  if (!nm) throw new Error('Il nome non puo\' essere vuoto');
+  return db.transaction('rw', db.matchUnits, async () => {
+    const same = await db.matchUnits.where('matchId').equals(matchId).filter((u) => u.side === side).toArray();
+    return db.matchUnits.add({ matchId, side, unitId, name: ML.uniqueRosterName(same.map((u) => u.name), nm), maxWounds: ML.parseWounds(maxWounds), note });
+  });
+}
+
+// Aggiunge molte miniature della fazione in un colpo (nome e units.stats.wounds copiati).
+export async function addMatchUnitsFromFaction(matchId, side, unitIds) {
+  const out = [];
+  for (const uid of unitIds) {
+    const u = await db.units.get(uid);
+    if (!u) continue;
+    out.push(await addMatchUnit(matchId, { side, unitId: u.id, name: u.name, maxWounds: u.stats ? u.stats.wounds : null }));
+  }
+  return out;
+}
+
+export async function updateMatchUnit(id, changes) {
+  const c = { ...changes };
+  if ('name' in c) { c.name = String(c.name || '').trim(); if (!c.name) throw new Error('Il nome non puo\' essere vuoto'); }
+  if ('maxWounds' in c) c.maxWounds = ML.parseWounds(c.maxWounds);
+  await db.transaction('rw', MATCH_TABLES(), async () => {
+    const u = await db.matchUnits.get(id);
+    if (!u) return;
+    await db.matchUnits.update(id, c);
+    await recalcMatch(u.matchId); // le ferite massime cambiano le ferite rimaste
+  });
+}
+
+export const countUnitEvents = async (matchId, unitRef) =>
+  (await db.matchEvents.where('matchId').equals(matchId).filter((e) => e.unitRef === unitRef || e.targetRef === unitRef).count());
+
+// Toglie dalla rosa solo se nessun evento la cita (altrimenti restituisce false).
+export async function removeMatchUnit(id) {
+  return db.transaction('rw', MATCH_TABLES(), async () => {
+    const u = await db.matchUnits.get(id);
+    if (!u) return true;
+    if (await countUnitEvents(u.matchId, id)) return false;
+    await db.matchUnits.delete(id);
+    return true;
+  });
+}
+
+// Riscrive `seq` (1..n) e i valori calcolati dal replay. Da chiamare dentro una transazione sulle tre tabelle.
+// Restituisce { rep, units, events } con gli eventi gia' aggiornati.
+async function recalcMatch(matchId) {
+  const m = await db.matches.get(matchId);
+  const units = await listMatchUnits(matchId);
+  let events = await listMatchEvents(matchId);
+  const tidy = ML.renumber(events);
+  for (let i = 0; i < events.length; i++) {
+    if (events[i].seq !== tidy[i].seq) await db.matchEvents.update(events[i].id, { seq: tidy[i].seq });
+  }
+  events = tidy;
+  const rep = ML.replay(units, events, { dismissed: (m && m.dismissed) || [] });
+  for (const { index, changes } of ML.derivedChanges(events, rep)) {
+    await db.matchEvents.update(events[index].id, changes);
+    Object.assign(events[index], changes);
+  }
+  return { rep, units, events };
+}
+
+// Stato attuale della partita (replay degli eventi salvati, nessuna scrittura).
+export async function getMatchState(matchId) {
+  const [m, units, events] = await Promise.all([db.matches.get(matchId), listMatchUnits(matchId), listMatchEvents(matchId)]);
+  const rep = ML.replay(units, events, { dismissed: (m && m.dismissed) || [] });
+  return { match: m, units, events, rep };
+}
+
+// Aggiunge un evento in coda o nella posizione `pos` (0..n: gli eventi da `pos` in poi scalano). Restituisce l'id.
+export async function addMatchEvent(matchId, ev, pos = null) {
+  return db.transaction('rw', MATCH_TABLES(), async () => {
+    const m = await db.matches.get(matchId);
+    if (!m) throw new Error('Partita non trovata');
+    const units = await listMatchUnits(matchId);
+    const events = await listMatchEvents(matchId);
+    const p = pos == null ? events.length : Math.max(0, Math.min(pos, events.length));
+    const row = ML.completeEvent({ ...ev, matchId, turn: 0, at: m.mode === 'rebuild' ? null : Date.now() }, units);
+    // fa posto: gli eventi da p in poi scalano di 1
+    for (let i = events.length - 1; i >= p; i--) await db.matchEvents.update(events[i].id, { seq: events[i].seq + 1 });
+    row.seq = p + 1;
+    const id = await db.matchEvents.add(row);
+    if (row.type === 'damage' && row.targetRef != null && (m.dismissed || []).includes(row.targetRef)) {
+      await db.matches.update(matchId, { dismissed: m.dismissed.filter((x) => x !== row.targetRef) });
+    }
+    await recalcMatch(matchId);
+    return id;
+  });
+}
+
+// Modifica campi di un evento (type, unitRef, targetRef, actionId, weaponId, data, note, side...) e ricalcola.
+export async function updateMatchEvent(id, changes) {
+  return db.transaction('rw', MATCH_TABLES(), async () => {
+    const e = await db.matchEvents.get(id);
+    if (!e) return null;
+    const units = await listMatchUnits(e.matchId);
+    const merged = ML.completeEvent({ ...e, ...changes, data: changes.data ? { ...changes.data } : e.data }, units);
+    delete merged.id;
+    await db.matchEvents.update(id, merged);
+    return recalcMatch(e.matchId);
+  });
+}
+
+// Eventi che sparirebbero eliminando `id` (lui e quelli che lo citano come sorgente).
+export async function previewDeleteEvent(id) {
+  const e = await db.matchEvents.get(id);
+  if (!e) return [];
+  return ML.cascadeIds(await listMatchEvents(e.matchId), id);
+}
+
+export async function deleteMatchEvent(id, { cascade = true } = {}) {
+  return db.transaction('rw', MATCH_TABLES(), async () => {
+    const e = await db.matchEvents.get(id);
+    if (!e) return null;
+    const ids = cascade ? ML.cascadeIds(await listMatchEvents(e.matchId), id) : [id];
+    await db.matchEvents.bulkDelete(ids);
+    return recalcMatch(e.matchId);
+  });
+}
+
+// Annulla l'ultima voce (o quella in posizione `index`, 0-based, se si sta inserendo in mezzo). Restituisce l'evento tolto.
+export async function undoMatchEvent(matchId, index = null) {
+  return db.transaction('rw', MATCH_TABLES(), async () => {
+    const events = await listMatchEvents(matchId);
+    const i = index == null ? events.length - 1 : index;
+    const e = events[i];
+    if (!e) return null;
+    await db.matchEvents.bulkDelete(ML.cascadeIds(events, e.id));
+    await recalcMatch(matchId);
+    return e;
+  });
+}
+
+// "Non incapacitato": nasconde la proposta per questa unita' finche' non subisce altro danno.
+export async function dismissIncapacitated(matchId, unitRef) {
+  const m = await db.matches.get(matchId);
+  if (!m) return;
+  const set = new Set([...(m.dismissed || []), unitRef]);
+  await db.matches.update(matchId, { dismissed: [...set] });
+}
+
+export async function endMatch(id, done = true) {
+  await db.matches.update(id, done ? { status: 'done', endedAt: Date.now() } : { status: 'live', endedAt: null });
 }
