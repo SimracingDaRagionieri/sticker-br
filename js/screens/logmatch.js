@@ -49,6 +49,8 @@ async function reload() {
   const cur = S;
   const st = await D.getMatchState(S.id);
   if (!st.match || S !== cur) return; // nel frattempo si e' lasciata la schermata (cleanup): niente da aggiornare
+  if (S.game ? S.game.id !== st.match.gameId : st.match.gameId != null) S.game = st.match.gameId != null ? await D.getGame(st.match.gameId) : null;
+  if (S !== cur) return;
   S.match = st.match; S.units = st.units; S.events = st.events; S.rep = st.rep;
   if (S.cursor != null) S.cursor = Math.min(S.cursor, S.events.length);
 }
@@ -645,22 +647,42 @@ async function generateFlow() {
 
 async function matchMenu() {
   menuSheet(S.match.name || 'Partita', [
-    { label: 'Nome, missione, giocatori…', run: () => run(async () => {
+    { label: 'Modifica dati partita…', run: () => run(async () => {
       const m = S.match;
+      const L = (S.game && S.game.labels) || {};
+      const factions = S.match.gameId != null ? await D.listFactions(S.match.gameId) : [];
+      const fOptions = [{ value: '', label: '(scrivo il nome)' }, ...factions.map((f) => ({ value: String(f.id), label: f.name }))];
+      const fVal = (i) => { const s = m.sides[i] || {}; return s.factionId != null && factions.some((f) => f.id === s.factionId) ? String(s.factionId) : ''; };
+      const fName = (i) => { const s = m.sides[i] || {}; return fVal(i) ? '' : (s.factionName || ''); };
       const tc = ML.teamColors(m);
       const colorOptions = ML.TEAM_COLORS.map((c) => ({ value: c.key, label: c.label }));
       const v = await formSheet({ title: 'Partita', fields: [
         { name: 'name', label: 'Nome', type: 'text', value: m.name || '' },
         { name: 'mission', label: 'Missione', type: 'text', value: m.mission || '' },
         { name: 'p0', label: 'Giocatore 1', type: 'text', value: (m.sides[0] || {}).player || '' },
+        { name: 'f0', label: `${L.faction || 'Fazione'} del giocatore 1`, type: 'select', value: fVal(0), options: fOptions },
+        { name: 'n0', label: `Nome ${String(L.faction || 'fazione').toLowerCase()} 1 (solo se «scrivo il nome»)`, type: 'text', value: fName(0) },
         { name: 'p1', label: 'Giocatore 2', type: 'text', value: (m.sides[1] || {}).player || '' },
+        { name: 'f1', label: `${L.faction || 'Fazione'} del giocatore 2`, type: 'select', value: fVal(1), options: fOptions },
+        { name: 'n1', label: `Nome ${String(L.faction || 'fazione').toLowerCase()} 2 (solo se «scrivo il nome»)`, type: 'text', value: fName(1) },
         { name: 'c0', label: 'Colore del giocatore 1', type: 'select', value: tc[0].key, options: colorOptions },
         { name: 'c1', label: 'Colore del giocatore 2', type: 'select', value: tc[1].key, options: colorOptions },
         { name: 'notes', label: 'Note', type: 'text', value: m.notes || '' }] });
       if (!v) return;
       if (v.c0 === v.c1) { toast('I due team devono avere colori diversi'); return; }
-      const sides = [0, 1].map((i) => ({ ...(m.sides[i] || {}), player: v['p' + i], color: v['c' + i] }));
+      const sides = [0, 1].map((i) => {
+        const f = factions.find((x) => String(x.id) === v['f' + i]);
+        return { ...(m.sides[i] || {}), player: v['p' + i], color: v['c' + i], factionId: f ? f.id : null, factionName: f ? f.name : String(v['n' + i] || '').trim() };
+      });
       await D.updateMatch(S.id, { name: v.name, mission: v.mission, notes: v.notes, sides });
+    }) },
+    { label: 'Cambia gioco…', run: () => run(async () => {
+      const games = await D.listGames();
+      const gid = await pickSheet({ title: 'Che gioco?', options: games.map((g) => ({ value: String(g.id), label: g.name, sub: g.id === S.match.gameId ? 'attuale' : '' })) });
+      if (gid == null || Number(gid) === S.match.gameId) return;
+      const ok = await confirmSheet({ title: 'Cambiare gioco?', lines: ['Cambiano le etichette (turni) e l\'elenco delle fazioni. Rosa e cronologia restano; i nomi delle fazioni restano come testo.'], confirmLabel: 'Cambia' });
+      if (!ok) return;
+      await D.changeMatchGame(S.id, Number(gid));
     }) },
     { label: isRebuild() ? 'Passa a «in diretta»' : 'Passa a «ricostruzione»', run: () => run(async () => { await D.updateMatch(S.id, { mode: isRebuild() ? 'live' : 'rebuild' }); S.cursor = null; }) },
     isDone()

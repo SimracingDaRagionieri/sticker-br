@@ -4,7 +4,7 @@ Specifica e piano di sviluppo (documento del 22/11/2026). I prompt dei singoli p
 
 ## Stato di avanzamento (aggiornato al 23/11/2026, sera)
 
-- PASSO 14 (Colori dei team) REALIZZATO, DA PROVARE SUL TELEFONO. CACHE_VERSION 'v20'. Dettaglio nella sezione "Passo 14". Test nuovi dentro `tests/logexport-test.mjs` (teamColors, contrasti, operatori colore nel PDF) e `tests/ui-rifiniture-test.py` (classi tm0/tm1, variabili --t0/--t1, scelta colori dal menu e dal form, colori uguali rifiutati, lista, PDF). Tutti i test verdi. Nessun altro passo previsto.
+- PASSO 14 (Colori dei team) REALIZZATO, DA PROVARE SUL TELEFONO. CACHE_VERSION 'v21'. Dettaglio nella sezione "Passo 14". Test nuovi dentro `tests/logexport-test.mjs` (teamColors, contrasti, operatori colore nel PDF) e `tests/ui-rifiniture-test.py` (classi tm0/tm1, variabili --t0/--t1, scelta colori dal menu e dal form, colori uguali rifiutati, lista, PDF). Tutti i test verdi. Nessun altro passo previsto.
 - PASSO 13 (Rifiniture + esportazione del log in PDF) REALIZZATO, DA PROVARE SUL TELEFONO. CACHE_VERSION 'v18'. Dettaglio nella sezione "Passo 13". Test nuovi: `node tests/logexport-test.mjs` (PDF riletto con pdf.js), `python3 tests/ui-rifiniture-test.py` (Altro, cartella dedicata con finta cartella, PDF dal menu, offline con service worker, aree di tocco e contrasti su tutte le schermate); `ui-crea-test.py` ora crea i 300 elementi con `tests/testdata.js`. Tutti gli altri test verdi. Non ci sono altri passi previsti: restano solo le prove sul telefono e i difetti noti elencati nel Passo 13.
 - PASSO 6 (Importa PDF squadra): CHIUSO. Provato da Manu sul telefono con PDF veri, funziona tutto bene (23/11/2026).
 
@@ -502,12 +502,13 @@ Realizzato (23/11/2026, CACHE_VERSION 'v20'). Richiesta di Vando: due colori div
 
 - Dati: `matches.sides[i].color` = chiave della tavolozza ('blu', 'arancione', 'verde', 'rosso', 'viola', 'giallo', 'azzurro', 'rosa'); entra nel backup con la tabella matches. Partite vecchie senza colore: predefiniti. `ML.teamColors(match)` (js/matchlog.js, puro) restituisce sempre due colori diversi (se coincidono, il secondo passa al primo libero) e ignora chiavi sconosciute.
 - Interfaccia: variabili CSS `--t0/--t1` sul documento mentre una partita e' aperta (tolte all'uscita), classi `tm0/tm1` (`--team`) su punti, rosa (intestazioni e righe), cronologia (barra a sinistra), recenti, pannello di scelta operativo e righe della lista partite. Segno ● (team 1) e ◆ (team 2) accanto ai nomi, cosi' la distinzione non dipende solo dal colore (daltonismo). Tutti i colori della tavolozza hanno contrasto >= 4,5:1 sullo sfondo scuro (test).
-- Scelta: nel form "Nuova partita" (colori precompilati blu/arancione) e nel menu partita > "Nome, missione, giocatori…". Due colori uguali: avviso "I due team devono avere colori diversi" e niente salvataggio.
+- Scelta: nel form "Nuova partita" (colori precompilati blu/arancione) e nel menu partita > "Modifica dati partita…". Due colori uguali: avviso "I due team devono avere colori diversi" e niente salvataggio.
 - PDF: `js/pdfwrite.js` opzione `bar` (barretta colorata a sinistra di ogni riga); `logexport.js` usa le varianti `pdf` piu' scure per la carta bianca: intestazioni dei lati, riga "Punti:", rosa e ogni voce con barra del team (attivazione e punti anche in testo colorato). Titoli dei turni neutri.
 - Limiti: solo due team; la tavolozza e' fissa (8 colori, nessun colore libero); gli sticker generati dal log non usano i colori dei team.
 
 VERIFICA SUL TELEFONO (Passo 14):
 1. Aggiorna l'app (Altro > App: "Versione dell'app: v19"). Apri una partita nel Log: punteggio, rosa e cronologia hanno blu per il team 1 e arancione per il team 2, con ● e ◆.
-2. Menu ⋮ > "Nome, missione, giocatori…": cambia i colori (es. verde e viola); provare lo stesso colore due volte deve dare errore. Lista partite: i nomi dei giocatori hanno i colori scelti.
+2. Menu ⋮ > "Modifica dati partita…": cambia i colori (es. verde e viola); provare lo stesso colore due volte deve dare errore. Lista partite: i nomi dei giocatori hanno i colori scelti.
 3. Nuova partita: i colori sono gia' blu e arancione.
 4. Menu ⋮ > "Esporta PDF…": barrette e punti colorati come sullo schermo; stampa o guarda in bianco e nero: i segni ●/◆ e i nomi bastano a distinguere.
+5. Correggere i dati iniziali (v21): menu ⋮ > "Modifica dati partita…" ora permette di cambiare anche la fazione di ciascun giocatore (elenco del gioco oppure «scrivo il nome»); menu ⋮ > "Cambia gioco…" cambia il gioco (con conferma): etichetta dei turni e fazioni disponibili passano al nuovo gioco, le fazioni gia' scelte restano come testo, rosa e cronologia non cambiano. La modalita' diretta/ricostruzione si cambia gia' dal menu. Non si puo' piu' cambiare altro dopo la creazione: l'ordine dei giocatori (lato 1/2) resta fisso.

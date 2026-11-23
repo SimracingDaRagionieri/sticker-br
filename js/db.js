@@ -1062,6 +1062,17 @@ export async function createMatch({ gameId, name = '', mission = '', sides, mode
   });
 }
 
+// Cambia il gioco di una partita: aggiorna nome gioco ed etichetta dei turni; le fazioni scelte dall'elenco del
+// vecchio gioco restano come testo (factionId azzerato). Rosa ed eventi non cambiano.
+export async function changeMatchGame(id, gameId) {
+  const game = await db.games.get(gameId);
+  if (!game) throw new Error('Il gioco non esiste');
+  const m = await db.matches.get(id);
+  if (!m) return;
+  const sides = (m.sides || []).map((s) => ({ ...s, factionId: null }));
+  await db.matches.update(id, { gameId: game.id, gameName: game.name, turnLabel: turnLabelOf(game), sides });
+}
+
 export async function updateMatch(id, changes) {
   await db.matches.update(id, changes);
 }
