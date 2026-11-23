@@ -28,6 +28,9 @@ async function navigate() {
   window.scrollTo(0, 0);
 }
 
+// Apre il database e crea i dati iniziali subito, senza bloccare l'interfaccia.
+import('./db.js').then((m) => m.ready()).catch((err) => console.warn('Database non pronto', err));
+
 window.addEventListener('hashchange', navigate);
 if (!location.hash) location.hash = '#/crea';
 navigate();
