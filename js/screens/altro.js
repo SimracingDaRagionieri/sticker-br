@@ -1,5 +1,6 @@
 import { saveBlob, shareBlobs, timestamp } from '../export.js';
 import { toast } from '../app.js';
+import * as D from '../db.js';
 
 // Disegna fuori dal DOM a pixel reali 1080x360, sfondo trasparente.
 function drawTestSticker() {
@@ -44,7 +45,14 @@ export function render(el) {
       <button id="btn-share" type="button">Condividi PNG di prova</button>
     </div>
     <p class="meta">Il file va nella cartella Download. Per InShot usa la Galleria o Google Foto, non WhatsApp o Telegram (perdono la trasparenza).</p>
+    <h2>Archivio immagini</h2>
+    <p class="meta" id="img-stats">Calcolo…</p>
   `;
+
+  const stats = el.querySelector('#img-stats');
+  D.ready().then(() => D.imageStats()).then((s) => {
+    stats.textContent = `Immagini: ${s.total} (miniature ${s.unit}, armi ${s.weapon}) · orfane: ${s.orphans}`;
+  }).catch(() => { stats.textContent = 'Database non disponibile.'; });
 
   const img = el.querySelector('#test-preview');
   makeBlob().then((b) => {

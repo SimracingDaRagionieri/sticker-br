@@ -98,3 +98,30 @@ button.danger-solid { background: #d64545; border-color: #d64545; color: #fff; f
 .checks legend { font-size: .85rem; color: var(--muted); margin-bottom: 6px; padding: 0; }
 .check { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 4px; }
 .check input { width: 24px; height: 24px; accent-color: var(--accent); flex: none; }
+
+/* ---------- Passo 3: immagini e ritaglio ---------- */
+.checker-bg { background-color: #ccc;
+  background-image: linear-gradient(45deg, #999 25%, transparent 25%, transparent 75%, #999 75%),
+                    linear-gradient(45deg, #999 25%, transparent 25%, transparent 75%, #999 75%);
+  background-size: 24px 24px; background-position: 0 0, 12px 12px; }
+
+button.img-ph { width: 100%; padding: 0 16px; background: transparent; font-size: 1rem; color: var(--muted); }
+button.img-ph span { color: var(--text); font-weight: 600; }
+
+button.img-box { display: block; width: 100%; min-height: 140px; margin: 8px 0; padding: 12px; border-radius: 12px; border: 1px solid var(--line); }
+.img-box img { display: block; margin: 0 auto; max-width: 100%; max-height: 55vh; object-fit: contain; }
+
+.thumb { flex: none; width: 48px; height: 48px; align-self: center; margin-left: 8px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+.thumb.checker-bg { background-size: 12px 12px; background-position: 0 0, 6px 6px; }
+.thumb img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.thumb.empty { border-style: dashed; }
+
+.crop { position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column; background: #000;
+  touch-action: none; overscroll-behavior: contain; user-select: none; -webkit-user-select: none; padding-top: env(safe-area-inset-top); }
+.crop-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px;
+  background: var(--panel); border-bottom: 1px solid var(--line); }
+.crop-title { font-weight: 600; }
+.crop-stage { position: relative; flex: 1; min-height: 0; }
+.crop-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.crop-foot { min-height: 48px; display: flex; align-items: center; justify-content: center; padding: 8px 16px calc(8px + env(safe-area-inset-bottom));
+  background: var(--panel); border-top: 1px solid var(--line); font-size: .8rem; color: var(--muted); text-align: center; }

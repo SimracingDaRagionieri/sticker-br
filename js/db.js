@@ -91,6 +91,59 @@ export async function listUnits(factionId) { return (await db.units.where('facti
 export async function listWeaponsOfFaction(factionId) { return (await db.weapons.where('factionId').equals(factionId).toArray()).sort(byName); }
 export async function listWeaponsOfUnit(unitId) { return (await db.weapons.where('unitIds').equals(unitId).toArray()).sort(byName); }
 
+// ---------- immagini (tabella images) ----------
+
+export const getImage = (id) => db.images.get(id);
+
+// Restituisce una Map id -> riga images (gli id mancanti non compaiono).
+export async function getImagesById(ids) {
+  const rows = await db.images.bulkGet(ids);
+  const map = new Map();
+  rows.forEach((r) => { if (r) map.set(r.id, r); });
+  return map;
+}
+
+// Crea il nuovo record, punta il proprietario (unita' o arma) al nuovo id ed elimina il vecchio record.
+// thumb (opzionale): miniatura PNG piccola per gli elenchi, cosi' non si decodificano le immagini grandi.
+async function replaceImage(table, kind, ownerId, blob, width, height, thumb) {
+  if (!(blob instanceof Blob)) throw new Error('Immagine non valida');
+  return db.transaction('rw', db[table], db.images, async () => {
+    const row = await db[table].get(ownerId);
+    if (!row) throw new Error('Elemento non trovato');
+    const id = await db.images.add({ kind, blob, width, height, thumb: thumb || null, createdAt: Date.now() });
+    await db[table].update(ownerId, { imageId: id });
+    if (row.imageId != null) await db.images.delete(row.imageId);
+    return id;
+  });
+}
+
+async function dropImage(table, ownerId) {
+  await db.transaction('rw', db[table], db.images, async () => {
+    const row = await db[table].get(ownerId);
+    if (!row) return;
+    if (row.imageId != null) await db.images.delete(row.imageId);
+    await db[table].update(ownerId, { imageId: null });
+  });
+}
+
+export const setUnitImage = (unitId, blob, width, height, thumb) => replaceImage('units', 'unit', unitId, blob, width, height, thumb);
+export const removeUnitImage = (unitId) => dropImage('units', unitId);
+export const setWeaponImage = (weaponId, blob, width, height, thumb) => replaceImage('weapons', 'weapon', weaponId, blob, width, height, thumb);
+export const removeWeaponImage = (weaponId) => dropImage('weapons', weaponId);
+
+// Diagnostica: immagini di miniature/armi non referenziate da nessuna riga (non dovrebbero esistere).
+export async function imageStats() {
+  const [images, units, weapons] = await Promise.all([db.images.toArray(), db.units.toArray(), db.weapons.toArray()]);
+  const used = new Set([...units, ...weapons].map((x) => x.imageId).filter((x) => x != null));
+  const own = images.filter((i) => i.kind === 'unit' || i.kind === 'weapon');
+  return {
+    total: images.length,
+    unit: images.filter((i) => i.kind === 'unit').length,
+    weapon: images.filter((i) => i.kind === 'weapon').length,
+    orphans: own.filter((i) => !used.has(i.id)).length
+  };
+}
+
 // ---------- scrittura generica ----------
 
 // Modifica campi di un record (nome, accentColor, ecc.).

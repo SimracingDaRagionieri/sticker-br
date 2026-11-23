@@ -4,11 +4,18 @@
 import * as D from '../db.js';
 import { toast } from '../app.js';
 import { esc, menuSheet, confirmSheet, formSheet } from '../ui.js';
+import { pickImage, cropImage } from '../crop.js';
 
 const KIND_LABEL = { ranged: 'A distanza', melee: 'Mischia', other: 'Altro' };
 const KIND_OPTIONS = Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }));
 const lc = (s) => String(s || '').toLowerCase();
 const link = (...parts) => '#/libreria' + parts.map((p) => '/' + p).join('');
+
+// Azioni sulle immagini, per tipo di elemento.
+const IMG_API = {
+  unit: { set: D.setUnitImage, remove: D.removeUnitImage },
+  weapon: { set: D.setWeaponImage, remove: D.removeWeaponImage }
+};
 
 let token = 0;
 
@@ -49,7 +56,7 @@ export async function render(el) {
   }
 
   const refresh = () => render(el);
-  const ctx = { el, refresh, game, faction, unit };
+  const ctx = { el, refresh, game, faction, unit, urls: [] };
 
   let html, wire;
   if (unit) ({ html, wire } = await unitScreen(ctx));
@@ -57,8 +64,12 @@ export async function render(el) {
   else if (game) ({ html, wire } = await gameScreen(ctx));
   else ({ html, wire } = await gamesScreen(ctx));
 
-  if (my !== token) return; // nel frattempo l'utente e' andato altrove
+  if (my !== token) { // nel frattempo l'utente e' andato altrove
+    ctx.urls.forEach((u) => URL.revokeObjectURL(u));
+    return;
+  }
   el.innerHTML = html;
+  watchImages(el);
   wire(el);
   window.scrollTo(0, 0);
 }
@@ -71,15 +82,49 @@ function crumbs(parts) {
   ).join('')}</nav>`;
 }
 
+// URL temporaneo per un Blob: viene revocato appena l'<img> lo ha caricato (vedi watchImages).
+function blobUrl(ctx, blob) {
+  const u = URL.createObjectURL(blob);
+  ctx.urls.push(u);
+  return u;
+}
+
+function watchImages(root) {
+  root.querySelectorAll('img[data-revoke]').forEach((img) => {
+    const done = () => URL.revokeObjectURL(img.src);
+    if (img.complete) done();
+    else {
+      img.addEventListener('load', done, { once: true });
+      img.addEventListener('error', done, { once: true });
+    }
+  });
+}
+
+function thumbHTML(url) {
+  return url
+    ? `<span class="thumb checker-bg"><img src="${url}" alt="" data-revoke></span>`
+    : '<span class="thumb empty" aria-hidden="true"></span>';
+}
+
+// Restituisce una funzione arma -> URL della miniatura (o null).
+async function weaponThumbs(ctx, weapons) {
+  const imgs = await D.getImagesById(weapons.map((w) => w.imageId).filter((x) => x != null));
+  return (w) => {
+    const r = w.imageId != null ? imgs.get(w.imageId) : null;
+    return r ? blobUrl(ctx, r.thumb || r.blob) : null;
+  };
+}
+
 function sectionHead(title, key) {
   return `<div class="section-head"><h2>${esc(title)}</h2>
     <button type="button" class="add" data-add="${key}" aria-label="Aggiungi">+</button></div>`;
 }
 
-function listHTML(key, items, { href, meta, empty }) {
+function listHTML(key, items, { href, meta, empty, thumb }) {
   if (!items.length) return `<p class="empty">${esc(empty)}</p>`;
   return `<ul class="list" data-list="${key}">${items.map((it) => `
     <li class="item">
+      ${thumb ? thumbHTML(thumb(it)) : ''}
       ${href ? `<a class="item-main" href="${href(it)}">` : '<div class="item-main">'}
         <span class="item-name">${it.fav ? '<span class="star">★</span> ' : ''}${esc(it.name)}</span>
         ${meta && meta(it) ? `<span class="item-meta">${esc(meta(it))}</span>` : ''}
@@ -210,13 +255,14 @@ async function factionScreen(ctx) {
   const { game, faction } = ctx;
   const L = game.labels;
   const [units, weapons] = await Promise.all([D.listUnits(faction.id), D.listWeaponsOfFaction(faction.id)]);
+  const wThumb = await weaponThumbs(ctx, weapons);
   const html = `
     ${crumbs([{ label: 'Libreria', href: link() }, { label: game.name, href: link('g' + game.id) }, { label: faction.name }])}
     <h1>${esc(faction.name)}</h1>
     ${sectionHead(L.unit, 'unit')}
     ${listHTML('unit', units, { href: (u) => link('g' + game.id, 'f' + faction.id, 'u' + u.id), empty: `Vuoto. Tocca + per aggiungere: ${L.unit}.` })}
     ${sectionHead(`${L.weapon} della fazione`, 'weapon')}
-    ${listHTML('weapon', weapons, { meta: (w) => `${KIND_LABEL[w.kind] || ''}${w.unitIds.length ? '' : ' · non collegata'}`, empty: `Nessuna: aggiungila dalla scheda di una miniatura o con +.` })}`;
+    ${listHTML('weapon', weapons, { thumb: wThumb, meta: (w) => `${KIND_LABEL[w.kind] || ''}${w.unitIds.length ? '' : ' · non collegata'}`, empty: `Nessuna: aggiungila dalla scheda di una miniatura o con +.` })}`;
 
   const wire = (root) => {
     onAdd(root, 'unit', async () => {
@@ -238,15 +284,20 @@ async function unitScreen(ctx) {
   const { game, faction, unit } = ctx;
   const L = game.labels;
   const weapons = await D.listWeaponsOfUnit(unit.id);
+  const wThumb = await weaponThumbs(ctx, weapons);
+  const imgRow = unit.imageId != null ? await D.getImage(unit.imageId) : null;
+  const imgHTML = imgRow
+    ? `<button type="button" class="img-box checker-bg" data-img-menu aria-label="Immagine di ${esc(unit.name)}: tocca per le opzioni"><img src="${blobUrl(ctx, imgRow.blob)}" alt="Immagine di ${esc(unit.name)}" data-revoke></button>`
+    : `<button type="button" class="img-ph" data-img-import><span>Importa immagine</span><small>Foto o screenshot di una carta</small></button>`;
   const html = `
     ${crumbs([{ label: 'Libreria', href: link() }, { label: game.name, href: link('g' + game.id) }, { label: faction.name, href: link('g' + game.id, 'f' + faction.id) }, { label: unit.name }])}
     <div class="title-row">
       <h1>${unit.fav ? '<span class="star">★</span> ' : ''}${esc(unit.name)}</h1>
       <button type="button" class="kebab" data-unit-menu aria-label="Menu miniatura">⋮</button>
     </div>
-    <div class="img-ph" role="img" aria-label="Segnaposto immagine"><span>Immagine</span><small>Si potrà aggiungere più avanti</small></div>
+    ${imgHTML}
     <h2>${esc(L.weapon)} (${weapons.length})</h2>
-    ${listHTML('weapon', weapons, { meta: (w) => KIND_LABEL[w.kind] || '', empty: `Nessuna ${lc(L.weapon)} collegata.` })}
+    ${listHTML('weapon', weapons, { thumb: wThumb, meta: (w) => KIND_LABEL[w.kind] || '', empty: `Nessuna ${lc(L.weapon)} collegata.` })}
     <div class="row">
       <button type="button" class="primary" data-add-weapon>Aggiungi ${esc(lc(L.weapon))}</button>
       <button type="button" data-link-weapon>Collega ${esc(lc(L.weapon))} della fazione</button>
@@ -254,6 +305,10 @@ async function unitScreen(ctx) {
 
   const wire = (root) => {
     root.querySelector('[data-unit-menu]').addEventListener('click', () => unitMenu(ctx, unit, L, () => ctx.refresh()));
+    const imp = root.querySelector('[data-img-import]');
+    if (imp) imp.addEventListener('click', () => imageFlow(ctx, 'unit', unit, 'pick'));
+    const imgMenu = root.querySelector('[data-img-menu]');
+    if (imgMenu) imgMenu.addEventListener('click', () => imageMenu(ctx, 'unit', unit, `Immagine di ${unit.name}`));
     root.querySelector('[data-add-weapon]').addEventListener('click', () => addWeaponForm(ctx, unit, L));
     root.querySelector('[data-link-weapon]').addEventListener('click', async () => {
       const all = await D.listWeaponsOfFaction(faction.id);
@@ -302,6 +357,48 @@ function unitMenu(ctx, u, L, after) {
   });
 }
 
+// ---------- immagini di miniature e armi ----------
+
+// how: 'pick' = sceglie un file nuovo; 'recrop' = riapre l'immagine gia' ritagliata e salvata.
+// Il selettore file va aperto subito dentro il tocco dell'utente: niente await prima di pickImage().
+function imageFlow(ctx, kind, row, how) {
+  return guard(async () => {
+    let source;
+    if (how === 'recrop') {
+      const img = row.imageId != null ? await D.getImage(row.imageId) : null;
+      if (!img) throw new Error('immagine non trovata');
+      source = img.blob;
+    } else {
+      source = await pickImage();
+      if (!source) return;
+    }
+    const out = await cropImage(source);
+    if (!out) return; // annullato (Annulla o tasto indietro)
+    await IMG_API[kind].set(row.id, out.blob, out.width, out.height, out.thumb);
+    toast('Immagine salvata');
+    ctx.refresh();
+  });
+}
+
+function imageMenu(ctx, kind, row, title) {
+  if (row.imageId == null) {
+    menuSheet(title, [{ label: 'Importa immagine', run: () => imageFlow(ctx, kind, row, 'pick') }]);
+    return;
+  }
+  menuSheet(title, [
+    { label: 'Sostituisci', run: () => imageFlow(ctx, kind, row, 'pick') },
+    { label: 'Ritaglia di nuovo', run: () => imageFlow(ctx, kind, row, 'recrop') },
+    {
+      label: 'Rimuovi', danger: true,
+      run: async () => {
+        const ok = await confirmSheet({ title: 'Rimuovere l\'immagine?', lines: ['L\'immagine ritagliata verrà eliminata.'], confirmLabel: 'Rimuovi', danger: true });
+        if (!ok) return;
+        await guard(async () => { await IMG_API[kind].remove(row.id); toast('Immagine rimossa'); ctx.refresh(); });
+      }
+    }
+  ]);
+}
+
 async function addWeaponForm(ctx, unit, L) {
   const v = await formSheet({
     title: `Aggiungi ${lc(L.weapon)}`,
@@ -319,10 +416,11 @@ async function addWeaponForm(ctx, unit, L) {
 
 // unit: la miniatura da cui si sta guardando (per "Scollega"), oppure null dalla pagina fazione.
 function weaponMenu(ctx, w, L, unit) {
-  const extra = unit ? [{
+  const extra = [{ label: `Immagine ${lc(L.weapon)}`, run: () => imageMenu(ctx, 'weapon', w, `Immagine: ${w.name}`) }];
+  if (unit) extra.push({
     label: 'Scollega da questa miniatura',
     run: async () => { await guard(async () => { await D.unlinkWeapon(w.id, unit.id); toast('Scollegata'); ctx.refresh(); }); }
-  }] : [];
+  });
   entityMenu(w, {
     ctx, table: 'weapons', extra,
     rename: async () => {
