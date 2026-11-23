@@ -4,6 +4,8 @@
 // renderSticker(data, config) -> Promise<Blob>
 //   data   = { unitName, weaponName, actionName, factionName, unitImage, weaponImage, accentColor }
 //            (unitImage/weaponImage: Blob oppure null; accentColor: '#rrggbb' oppure null)
+//            + per i template "Risultato" (Passo 11): targetName, damageText ("-3"), woundsLeftText ("rimangono 5"),
+//            damageLeftText ("-3 · rimangono 5") e statusText ("INCAPACITATO"); un testo vuoto = riga non scritta.
 //   config = config del template (vedi SPEC.md sezione 2). Campi mancanti = valori predefiniti.
 //
 // Significato dei campi principali:
@@ -32,10 +34,13 @@ function normBorder(b) {
   return { width, color: b.color || '#ffffff' };
 }
 
+// Origini del testo di una riga. Dal Passo 11: target, damage, woundsLeft, damageLeft, status (template "Risultato").
+export const LINE_SOURCES = ['unit', 'weapon', 'action', 'faction', 'target', 'damage', 'woundsLeft', 'damageLeft', 'status', 'text'];
+
 function normLine(l = {}) {
   const size = Math.max(8, num(l.size, 64));
   return {
-    source: ['unit', 'weapon', 'action', 'faction', 'text'].includes(l.source) ? l.source : 'text',
+    source: LINE_SOURCES.includes(l.source) ? l.source : 'text',
     text: String(l.text ?? ''),
     font: String(l.font || 'Oswald'),
     weight: num(l.weight, 400),
@@ -166,6 +171,11 @@ function lineValue(line, data) {
     case 'weapon': v = data.weaponName; break;
     case 'action': v = data.actionName; break;
     case 'faction': v = data.factionName; break;
+    case 'target': v = data.targetName; break;
+    case 'damage': v = data.damageText; break;
+    case 'woundsLeft': v = data.woundsLeftText; break;
+    case 'damageLeft': v = data.damageLeftText; break;
+    case 'status': v = data.statusText; break;
     default: v = line.text;
   }
   v = String(v ?? '').replace(/\s+/g, ' ').trim();

@@ -153,7 +153,7 @@ with sync_playwright() as pw:
       rev: await m.getSetting('turnLabelsRev'),
       evIdx: m.db.matchEvents.schema.idxByName['[matchId+seq]'] ? 'ok' : 'manca'
     })""")
-    check(info['verno'] == 3, f'versione schema {info["verno"]} (attesa 3)')
+    check(info['verno'] == 4, f'versione schema {info["verno"]} (attesa 4, dal Passo 11)')
     check(all(t in info['tables'] for t in ['matches', 'matchUnits', 'matchEvents', 'rules', 'games', 'settings']), 'tabelle della v2 e nuove presenti')
     check(info['evIdx'] == 'ok', 'indice composto [matchId+seq]')
     check(dict(info['games']) == {'Kill Team': 'Turning Point', 'Warhammer 40,000': 'Turno', 'The Old World': 'Turno'}, f'etichette turno: {info["games"]}')

@@ -8,6 +8,7 @@ const routes = {
   libreria: () => import('./screens/libreria.js'),
   template: () => import('./screens/template.js'),
   log: () => import('./screens/log.js'),
+  coda: () => import('./screens/coda.js'),
   altro: () => import('./screens/altro.js')
 };
 
@@ -23,7 +24,7 @@ export function toast(msg) {
 }
 
 // Schermate senza voce nella barra in basso: la voce attiva resta quella di provenienza.
-const NO_TAB = new Set(['anteprima', 'carta', 'pdf']);
+const NO_TAB = new Set(['anteprima', 'carta', 'pdf', 'coda']);
 
 // Legge l'hash: #/anteprima?unit=3&weapon=5 -> { name: 'anteprima', segs: [], query: URLSearchParams }
 export function parseHash(hash = location.hash) {

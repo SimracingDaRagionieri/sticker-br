@@ -6,20 +6,31 @@
 
 export const SAMPLE = {
   activation: { unitName: 'Intercessor Sergeant', weaponName: 'Bolt rifle', factionName: 'Angels of Death', actionName: '' },
-  action: { unitName: '', weaponName: '', factionName: '', actionName: 'Reposition' }
+  action: { unitName: '', weaponName: '', factionName: '', actionName: 'Reposition' },
+  // Risultato (Passo 11): attaccante, arma, bersaglio, danni, ferite rimaste e stato.
+  result: {
+    unitName: 'Intercessor Sergeant', weaponName: 'Bolt rifle', factionName: 'Angels of Death', actionName: '',
+    targetName: 'Hormagaunt', damageText: '-3', woundsLeftText: 'rimangono 5', damageLeftText: '-3 · rimangono 5', statusText: 'INCAPACITATO'
+  }
 };
 
 export const SOURCE_LABELS = {
-  unit: 'Nome miniatura', weapon: 'Nome arma', action: 'Testo azione', faction: 'Nome fazione', text: 'Testo fisso'
+  unit: 'Nome miniatura', weapon: 'Nome arma', action: 'Testo azione', faction: 'Nome fazione', text: 'Testo fisso',
+  target: 'Nome bersaglio', damage: 'Danni fatti (-3)', woundsLeft: 'Ferite rimaste (rimangono 5)',
+  damageLeft: 'Danni e ferite rimaste (-3 · rimangono 5)', status: 'Stato (INCAPACITATO)'
 };
 
 // Origini sensate per tipo di template (la origine gia' presente in una riga resta sempre disponibile).
 export const sourcesFor = (kind, current) => {
-  const base = kind === 'action' ? ['action', 'text'] : ['unit', 'weapon', 'faction', 'text'];
+  const base = kind === 'action' ? ['action', 'text']
+    : kind === 'result' ? ['target', 'damageLeft', 'damage', 'woundsLeft', 'status', 'unit', 'weapon', 'faction', 'text']
+      : ['unit', 'weapon', 'faction', 'text'];
   return current && !base.includes(current) ? [...base, current] : base;
 };
 
-export const newLine = (kind) => (kind === 'action'
+export const newLine = (kind) => (kind === 'result'
+  ? { source: 'damageLeft', font: 'Oswald', weight: 500, size: 64, minSize: 32, color: '#FFFFFF', stroke: { width: 4, color: '#000000' }, shadow: false, upper: false, align: 'left' }
+  : kind === 'action'
   ? { source: 'action', font: 'Bebas Neue', size: 96, minSize: 56, color: '#FFFFFF', stroke: { width: 6, color: '#000000' }, shadow: true, upper: true, align: 'center' }
   : { source: 'text', text: 'Testo', font: 'Oswald', weight: 500, size: 56, minSize: 32, color: '#FFFFFF', stroke: { width: 4, color: '#000000' }, shadow: false, upper: false, align: 'left' });
 
@@ -61,6 +72,7 @@ const B = (path, label) => ({ type: 'border', path, label });
 
 export function groupsFor(kind) {
   const act = kind === 'action';
+  const res = kind === 'result';
   const groups = [
     { id: 'size', title: 'Dimensioni', controls: [
       R('width', 'Larghezza', 540, 2160, 10, { suffix: ' px' }),
@@ -75,7 +87,7 @@ export function groupsFor(kind) {
       R('plate.padding', 'Spazio interno', 0, 100, 1, { suffix: ' px' }),
       B('plate.border', 'Bordo' + (act ? ' (spento: se l\'azione ha un colore, è il bordo)' : ''))
     ] },
-    { id: 'image', title: act ? 'Icona azione' : 'Immagine miniatura', controls: [
+    { id: 'image', title: act ? 'Icona azione' : res ? 'Immagine bersaglio' : 'Immagine miniatura', controls: [
       T('image.show', act ? 'Mostra l\'icona (partenza: in Anteprima si può spegnere)' : 'Mostra l\'immagine (partenza)'),
       C('image.side', 'Lato', [['left', 'Sinistra'], ['right', 'Destra'], ['top', 'Sopra']]),
       R('image.height', 'Altezza', 40, 600, 2, { suffix: ' px' }),
@@ -85,7 +97,7 @@ export function groupsFor(kind) {
     { id: 'lines', title: 'Righe di testo', lines: true }
   ];
   if (!act) {
-    groups.push({ id: 'weapon', title: 'Immagine arma', controls: [
+    groups.push({ id: 'weapon', title: res ? 'Immagine arma usata' : 'Immagine arma', controls: [
       T('weaponImage.show', 'Mostra l\'immagine (partenza)'),
       C('weaponImage.position', 'Posizione', [['below', 'Sotto'], ['right', 'A destra']]),
       R('weaponImage.maxHeight', 'Altezza massima', 40, 600, 2, { suffix: ' px' }),

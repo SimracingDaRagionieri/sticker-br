@@ -3,6 +3,7 @@ import { toast } from '../app.js';
 import * as D from '../db.js';
 import { confirmSheet } from '../ui.js';
 import { generateTestData, deleteTestData, testDataStats } from '../testdata.js';
+import { queueButtonHTML, bindQueueButton, queueActionsHTML, bindQueueActions } from './coda.js';
 
 // Disegna fuori dal DOM a pixel reali 1080x360, sfondo trasparente.
 function drawTestSticker() {
@@ -38,7 +39,12 @@ function makeBlob() {
 
 export function render(el) {
   el.innerHTML = `
-    <h1>Altro</h1>
+    <div class="title-row"><h1>Altro</h1>${queueButtonHTML()}</div>
+    <h2>Coda sticker</h2>
+    <p class="meta" id="q-info">Controllo…</p>
+    ${queueActionsHTML()}
+    <div class="row"><a class="btn btn-link" href="#/coda">Apri la coda</a></div>
+    <p class="meta">Salva tutti scarica un file ogni 400 ms in Download (Chrome può chiedere una volta il permesso per più download). Condividi tutti apre un'unica condivisione con tutti i file.</p>
     <h2>Test esportazione</h2>
     <p>Salva il PNG di prova, poi in InShot apri Sticker → personalizzato e controlla che si veda sul video con lo sfondo trasparente.</p>
     <div class="checker"><img id="test-preview" alt="Anteprima sticker di prova"></div>
@@ -57,6 +63,16 @@ export function render(el) {
       <button id="btn-del" type="button" class="danger">Elimina dati di prova</button>
     </div>
   `;
+
+  bindQueueButton(el);
+  bindQueueActions(el);
+  const qinfo = el.querySelector('#q-info');
+  const updQ = async () => {
+    if (!el.isConnected) { window.removeEventListener('sbr-queue', updQ); return; }
+    try { const n = await D.ready().then(() => D.queueCount()); qinfo.textContent = n ? `${n} sticker in coda.` : 'Nessuno sticker in coda.'; } catch { qinfo.textContent = 'Database non disponibile.'; }
+  };
+  window.addEventListener('sbr-queue', updQ);
+  updQ();
 
   const tstats = el.querySelector('#test-stats');
   const btnGen = el.querySelector('#btn-gen');

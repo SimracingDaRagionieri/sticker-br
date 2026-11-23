@@ -144,7 +144,7 @@ with sync_playwright() as pw:
       return { names: rows.map((r) => r.name).sort(), rev: await m.getSetting('templatesRev'),
                actionShow: rows.find((r) => r.kind === 'action').config.image.show };
     }""")
-    check(info['names'] == ['Attivazione', 'Azione', 'Solo testo'] and info['rev'] == 3, f'3 template, templatesRev 3: {info}')
+    check(info['names'] == ['Attivazione', 'Azione', 'Risultato', 'Solo testo'] and info['rev'] == 3, f'4 template (con Risultato dal Passo 11), templatesRev 3: {info}')
     check(info['actionShow'] is True, 'il template Azione ha image.show true (l\'icona si vede se esiste, come prima)')
     AZ = tpl_by_name(page, 'Azione')
     AT = tpl_by_name(page, 'Attivazione')
@@ -232,7 +232,7 @@ with sync_playwright() as pw:
     page.goto(BASE + '#/template')
     page.wait_for_selector('[data-kind="activation"] .item')
     check(page.locator('[data-kind="activation"] .item').count() == 2 and page.locator('[data-kind="action"] .item').count() == 1, 'Attivazione: 2, Azione: 1')
-    check(page.locator('.item-meta:has-text("Predefinito")').count() == 2, 'un predefinito per tipo')
+    check(page.locator('.item-meta:has-text("Predefinito")').count() == 3, 'un predefinito per tipo (Attivazione, Azione, Risultato)')
     page.screenshot(path=f'{SHOTS}/1-elenco.png', full_page=True)
     page.locator('[data-kind="action"] [data-menu]').click()
     check(page.locator('.sheet button', has_text='Elimina').count() == 0, 'l\'ultimo template del tipo non si puo\' eliminare')

@@ -6,7 +6,7 @@ export function timestamp(d = new Date()) {
 }
 
 // Pezzo di nome file sicuro: senza accenti, spazi in trattini, solo lettere/cifre/trattini, max 40 caratteri.
-function slug(s) {
+export function slug(s) {
   return String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/\s+/g, '-').replace(/[^A-Za-z0-9_-]/g, '').replace(/-{2,}/g, '-').replace(/^[-_]+|[-_]+$/g, '').slice(0, 40);
 }
@@ -15,6 +15,14 @@ function slug(s) {
 export function stickerFilename(parts, d = new Date()) {
   const body = parts.map(slug).filter(Boolean);
   return ['BR', ...(body.length ? body : ['sticker']), timestamp(d)].join('_') + '.png';
+}
+
+// Sticker generati dal log (Passo 11): BR_<partita>_<nnn>_<parti>.png. `nnn` = numero della voce nel log (3 cifre),
+// cosi' i file si ordinano come il log. Niente data nel nome: lo stesso sticker rigenerato ha lo stesso nome.
+export function logStickerFilename(matchName, seq, parts) {
+  const body = parts.map(slug).filter(Boolean);
+  const n = String(Math.max(0, Math.floor(Number(seq) || 0))).padStart(3, '0');
+  return ['BR', slug(matchName) || 'partita', n, ...body].join('_') + '.png';
 }
 
 export function saveBlob(blob, filename) {

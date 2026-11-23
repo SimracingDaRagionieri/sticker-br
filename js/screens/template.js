@@ -13,7 +13,7 @@ import {
   SAMPLE, SOURCE_LABELS, sourcesFor, newLine, getAt, setAt, moveItem, groupsFor, LINE_CONTROLS, hex6
 } from '../templateedit.js';
 
-const KIND_TITLE = { activation: 'Attivazione', action: 'Azione' };
+const KIND_TITLE = { activation: 'Attivazione', action: 'Azione', result: 'Risultato' };
 let token = 0;
 let leaveHook = null; // salva le modifiche in sospeso quando si lascia l'editor
 
@@ -209,6 +209,12 @@ function placeholderBlob(w, h, label, hue) {
 async function pickSample(kind) {
   const base = SAMPLE[kind];
   const sample = { data: { ...base, accentColor: null, unitImage: null, weaponImage: null }, from: null };
+  // Risultato (Passo 11): sempre nomi e testi di esempio (i recenti non hanno risultati), con immagini di esempio.
+  if (kind === 'result') {
+    sample.data.unitImage = await placeholderBlob(400, 300, 'IMG', 210);
+    sample.data.weaponImage = await placeholderBlob(900, 160, 'PROFILO ARMA', 30);
+    return sample;
+  }
   try {
     for (const r of await D.listRecents()) {
       if (kind === 'action' ? r.actionId == null : r.unitId == null) continue;
@@ -330,7 +336,7 @@ async function renderEditor(el, id, my) {
         <button type="button" class="kebab" data-tpl-menu aria-label="Azioni template">⋮</button>
       </div>
       <div class="tpl-preview checker-bg"><img id="pv-img" alt="Anteprima del template" hidden><span class="pv-wait" id="pv-wait">Disegno lo sticker…</span></div>
-      <p class="meta tpl-sample"><span id="tpl-saved">Salvataggio automatico</span> · esempio: ${esc(kind === 'action' ? sample.data.actionName : sample.data.unitName)}${sample.from ? '' : ' (nomi di esempio)'}; le immagini di esempio compaiono solo qui.</p>
+      <p class="meta tpl-sample"><span id="tpl-saved">Salvataggio automatico</span> · esempio: ${esc(kind === 'action' ? sample.data.actionName : kind === 'result' ? sample.data.targetName : sample.data.unitName)}${sample.from ? '' : ' (nomi di esempio)'}; le immagini di esempio compaiono solo qui.</p>
     </div>
     <div class="tpl-groups">
       ${groups.map((g) => `<details class="tpl-group" data-group="${g.id}"${g.id === 'size' ? ' open' : ''}><summary>${esc(g.title)}</summary><div class="tpl-body">${groupHTML(g)}</div></details>`).join('')}

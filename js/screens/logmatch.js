@@ -4,7 +4,10 @@
 import * as D from '../db.js';
 import * as ML from '../matchlog.js';
 import { toast } from '../app.js';
-import { esc, menuSheet, confirmSheet, formSheet, pickSheet, keypadSheet, textSheet } from '../ui.js';
+import { esc, menuSheet, confirmSheet, formSheet, pickSheet, keypadSheet, textSheet, openSheet, closeSheet } from '../ui.js';
+import * as LS from '../logsticker.js';
+import { generateForMatch } from '../logsource.js';
+import { queueButtonHTML, bindQueueButton } from './coda.js';
 
 let S = null; // stato della schermata aperta
 
@@ -103,6 +106,7 @@ function draw() {
         <div class="lg-title">${esc(title)}</div>
         <div class="lg-sub" data-turn>${here.turn ? `${esc(turnLabel())} ${here.turn}` : 'Prima del primo turno'}${iniLine ? ' · ' + iniLine : ''}${isRebuild() ? ' · ricostruzione' : ''}${isDone() ? ' · terminata' : ''}</div>
       </div>
+      ${queueButtonHTML()}
       <button type="button" class="kebab" data-act="match-menu" aria-label="Menu partita">⋮</button>
     </div>
     <div class="lg-score" data-score>
@@ -115,6 +119,7 @@ function draw() {
       <button type="button" class="chip" data-view="cron" aria-pressed="${S.view === 'cron'}">Cronologia${warns ? ` ⚠ ${warns}` : ''}</button>
     </div>
     ${body}`;
+  bindQueueButton(S.el);
 }
 
 function tableHTML(here) {
@@ -456,7 +461,12 @@ async function unitMenu(id) {
 
 async function eventMenu(i) {
   const ev = S.events[i];
-  const items = [{ label: 'Modifica', run: () => run(() => editEvent(ev)) }];
+  const items = [];
+  // Sticker dal log (Passo 11): attivazione, azione, danno (risultato) e punti hanno uno sticker.
+  if (LS.isStickerEvent(ev) && ev.id != null) {
+    items.push({ label: 'Crea sticker', run: () => { location.hash = `#/anteprima?match=${S.id}&ev=${ev.id}`; } });
+  }
+  items.push({ label: 'Modifica', run: () => run(() => editEvent(ev)) });
   if (isRebuild()) {
     items.push({ label: 'Inserisci prima di questa voce', run: () => { S.cursor = i; S.inserted = 0; S.view = 'tavolo'; draw(); } });
     items.push({ label: 'Inserisci dopo questa voce', run: () => { S.cursor = i + 1; S.inserted = 0; S.view = 'tavolo'; draw(); } });
@@ -544,6 +554,52 @@ async function showSummary() {
   textSheet({ title: 'Riepilogo', text: ML.summarize(S.match, S.units, S.events, S.rep, { sideName }) });
 }
 
+// "Genera sticker della partita" (Passo 11): spunte per tipo, poi li disegna in sequenza nell'ordine del log e li mette in
+// coda (nomi BR_<partita>_<nnn>_...png). Si puo' interrompere: quelli gia' in coda restano.
+async function generateFlow() {
+  const counts = LS.countByType(S.events);
+  const total = LS.STICKER_TYPES.reduce((n, t) => n + counts[t], 0);
+  if (!total) { toast('Nessuna voce da trasformare in sticker'); return; }
+  const v = await formSheet({
+    title: `Genera sticker della partita (${total} voci)`,
+    submitLabel: 'Genera',
+    fields: [{ name: 'types', label: 'Quali sticker', type: 'checks',
+      options: LS.STICKER_TYPES.map((t) => ({ value: t, label: `${LS.TYPE_LABELS[t]} (${counts[t]})`, checked: counts[t] > 0 })) }]
+  });
+  if (!v) return;
+  const types = v.types.filter((t) => counts[t] > 0);
+  if (!types.length) { toast('Nessun tipo scelto'); return; }
+  const n = types.reduce((a, t) => a + counts[t], 0);
+  let stop = false;
+  const sheet = openSheet(`
+    <h3 class="sheet-title">Genero gli sticker…</h3>
+    <p class="sheet-text" data-gen-status>0 / ${n}</p>
+    <progress class="gen-bar" data-gen-bar max="${n}" value="0"></progress>
+    <div class="row"><button type="button" data-gen-stop>Interrompi</button></div>`, { onClose: () => { stop = true; } });
+  sheet.querySelector('[data-gen-stop]').addEventListener('click', () => { stop = true; });
+  let res;
+  try {
+    res = await generateForMatch(S.id, types, {
+      shouldStop: () => stop,
+      onProgress: (d, t) => {
+        const st = sheet.querySelector('[data-gen-status]');
+        if (st) st.textContent = `${d} / ${t}`;
+        const bar = sheet.querySelector('[data-gen-bar]');
+        if (bar) bar.value = d;
+      }
+    });
+  } finally {
+    closeSheet();
+  }
+  const msg = `${res.done} sticker in coda${res.failed ? `, ${res.failed} non riusciti` : ''}${res.stopped ? ' (interrotto)' : ''}`;
+  const done = openSheet(`
+    <h3 class="sheet-title">${esc(msg)}</h3>
+    <p class="sheet-text">Sono nell'ordine del log. Da Altro o dalla coda li salvi o li condividi tutti.</p>
+    <div class="row"><button type="button" data-close>Chiudi</button><button type="button" class="primary" data-open-queue>Apri la coda</button></div>`);
+  done.querySelector('[data-close]').addEventListener('click', closeSheet);
+  done.querySelector('[data-open-queue]').addEventListener('click', () => { closeSheet(); location.hash = '#/coda'; });
+}
+
 async function matchMenu() {
   menuSheet(S.match.name || 'Partita', [
     { label: 'Nome, missione, giocatori…', run: () => run(async () => {
@@ -563,6 +619,7 @@ async function matchMenu() {
       ? { label: 'Riapri la partita', run: () => run(async () => { await D.endMatch(S.id, false); }) }
       : { label: 'Termina la partita', run: () => run(async () => { await D.endMatch(S.id, true); }) },
     { label: 'Copia riepilogo', run: () => run(showSummary) },
+    { label: 'Genera sticker della partita…', run: () => run(generateFlow) },
     { label: 'Elimina partita', danger: true, run: async () => {
       const ok = await confirmSheet({ title: 'Eliminare la partita?', lines: [`Verranno eliminate ${S.events.length} voci e la rosa. Non si può annullare.`], confirmLabel: 'Elimina', danger: true });
       if (!ok) return;

@@ -55,6 +55,27 @@ db.version(3).stores({
   matchEvents: '++id, matchId, [matchId+seq]'
 });
 
+// Versione 4 (Passo 11): coda degli sticker gia' disegnati (PNG in attesa di Salva tutti / Condividi tutti).
+// Ripete tutte le tabelle della v3.
+db.version(4).stores({
+  games: '++id, name',
+  factions: '++id, gameId, name',
+  units: '++id, factionId, gameId, name, fav, lastUsed',
+  weapons: '++id, factionId, *unitIds, name, fav, lastUsed',
+  actions: '++id, gameId, name, fav, lastUsed',
+  images: '++id, kind, cardId',
+  cards: '++id, factionId, createdAt',
+  templates: '++id, kind',
+  fonts: '++id, family',
+  recents: '++id, &key, usedAt',
+  settings: 'key',
+  rules: '++id, factionId, kind, name',
+  matches: '++id, gameId, status, startedAt',
+  matchUnits: '++id, matchId, side',
+  matchEvents: '++id, matchId, [matchId+seq]',
+  queue: '++id, &key'
+});
+
 // ---------- utilita' ----------
 
 const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
@@ -148,6 +169,7 @@ async function init() {
     await db.settings.put({ key: 'seeded', value: 1 });
   });
   await seedTemplates();
+  await seedResultTemplate();
   await seedActions();
   await migrateTurnLabels();
   if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
@@ -196,6 +218,33 @@ async function seedTemplates() {
       }
       await db.settings.put({ key: 'templatesRev', value: 3 });
     }
+  });
+}
+
+// Template predefinito "Risultato" (Passo 11), creato una sola volta (settings.seededResultTemplate) anche per chi
+// aveva gia' i template degli altri tipi. Non tocca nessun altro template.
+const SEED_RESULT_TEMPLATE = {
+  name: 'Risultato', kind: 'result',
+  config: {
+    width: 1080, padding: 24, trim: true,
+    plate: { show: true, color: '#111111', opacity: 0.85, radius: 20, padding: 28, border: { width: 4, color: '#E8B04A' } },
+    image: { show: true, side: 'left', height: 170, radius: 12, border: { width: 3, color: '#FFFFFF' } },
+    weaponImage: { show: false, position: 'below', maxHeight: 200, replaceText: false, radius: 10 },
+    lines: [
+      { source: 'target', font: 'Bebas Neue', size: 96, minSize: 52, color: '#FFFFFF', stroke: { width: 6, color: '#000000' }, shadow: true, upper: true, align: 'left' },
+      { source: 'damageLeft', font: 'Oswald', weight: 500, size: 72, minSize: 36, color: '#E8B04A', stroke: { width: 4, color: '#000000' }, shadow: false, upper: false, align: 'left' },
+      { source: 'status', font: 'Bebas Neue', size: 72, minSize: 40, color: '#FF4D4D', stroke: { width: 5, color: '#000000' }, shadow: true, upper: true, align: 'left' }
+    ]
+  }
+};
+
+async function seedResultTemplate() {
+  await db.transaction('rw', db.templates, db.settings, async () => {
+    if (await db.settings.get('seededResultTemplate')) return;
+    const id = await db.templates.add({ name: SEED_RESULT_TEMPLATE.name, kind: SEED_RESULT_TEMPLATE.kind, config: structuredClone(SEED_RESULT_TEMPLATE.config) });
+    const prev = await db.settings.get('defaultTemplates');
+    await db.settings.put({ key: 'defaultTemplates', value: { ...(prev ? prev.value : {}), result: id } });
+    await db.settings.put({ key: 'seededResultTemplate', value: 1 });
   });
 }
 
@@ -250,7 +299,7 @@ export async function listWeaponsOfUnit(unitId) { return (await db.weapons.where
 
 // ---------- template e uso degli sticker ----------
 
-export const TEMPLATE_KINDS = ['activation', 'action'];
+export const TEMPLATE_KINDS = ['activation', 'action', 'result'];
 
 export async function listTemplates(kind) {
   const rows = kind ? await db.templates.where('kind').equals(kind).toArray() : await db.templates.toArray();
@@ -328,6 +377,28 @@ export async function deleteTemplate(id) {
     }
   });
 }
+
+// ---------- coda degli sticker (Passo 11) ----------
+// Tabella queue = { id, key, name, label, blob, createdAt }. L'ordine e' quello degli id (ordine di inserimento).
+// `key` e' unica: rigenerare lo stesso sticker dal log (stessa chiave) sostituisce la riga vecchia, che va in coda.
+// Ogni modifica avvisa le schermate con l'evento 'sbr-queue' (contatore).
+
+const queueChanged = () => { try { globalThis.dispatchEvent(new Event('sbr-queue')); } catch { /* fuori dal browser */ } };
+
+export async function queueAdd({ key, name, label = '', blob }) {
+  if (!blob) throw new Error('Sticker mancante');
+  const k = String(key || `q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
+  const id = await db.transaction('rw', db.queue, async () => {
+    await db.queue.where('key').equals(k).delete();
+    return db.queue.add({ key: k, name: String(name || 'sticker.png'), label: String(label || ''), blob, createdAt: Date.now() });
+  });
+  queueChanged();
+  return id;
+}
+export const queueList = async () => (await db.queue.toArray()).sort((a, b) => a.id - b.id);
+export const queueCount = () => db.queue.count();
+export async function queueRemove(id) { await db.queue.delete(id); queueChanged(); }
+export async function queueClear() { await db.queue.clear(); queueChanged(); }
 
 // ---- Font importati (Passo 9): tabella fonts { family, blob, format } ----
 export const FONT_FORMATS = ['ttf', 'otf', 'woff2', 'woff'];

@@ -4,6 +4,8 @@ Specifica e piano di sviluppo (documento del 22/11/2026). I prompt dei singoli p
 
 ## Stato di avanzamento (aggiornato al 23/11/2026, sera)
 
+- PASSO 11 (Sticker dal log e coda) REALIZZATO, DA PROVARE SUL TELEFONO. CACHE_VERSION 'v16'. Dettaglio nella sezione "Passo 11". Test nuovi: `node tests/logsticker-test.mjs` (parti pure), `python3 tests/ui-logsticker-test.py` (Chrome headless); `ui-log-test.py` e `ui-template-test.py` aggiornati (schema v4, terzo template); tutti gli altri verdi. Prossimo: Passo 12 (backup e ripristino): deve includere anche `queue` (PNG gia' disegnati) e il template "Risultato".
+
 - PASSO 10 (Log della partita) REALIZZATO, DA PROVARE SUL TELEFONO. CACHE_VERSION 'v15'. Dettaglio nella sezione "Passo 10". Test nuovi: `node tests/log-test.mjs` (parti pure, 53 controlli), `python3 tests/ui-log-test.py` (Chrome headless, 90 controlli: partita di 2 turni, danni fino a incapacitare, annulla, modifica con ricalcolo, ricostruzione con inserimento in mezzo, avvisi, eliminazione dei dati di Libreria); tutti gli altri test restano verdi. Voce propria "Log" nella barra (5 voci). Prossimo: Passo 11 (Sticker dal log e coda). Il Passo 6 resta aperto in attesa del nuovo `diagnostica-pdf.json` di Manu.
 - PASSO 9 (Editor dei template e font) REALIZZATO, DA PROVARE SUL TELEFONO. CACHE_VERSION 'v14'. Dettaglio nella sezione "Passo 9". Test nuovi: `node tests/template-test.mjs` (77 controlli, parti pure), `python3 tests/ui-template-test.py` (Chrome headless, ~85 controlli); tutti gli altri test restano verdi (`ui-crea-test.py` ha fallito una volta su due per il solito controllo sensibile ai tempi, "recente con miniatura eliminata", ed e' passato alla ripetizione). Il Passo 6 resta aperto in attesa del nuovo `diagnostica-pdf.json` di Manu. Il Passo 12 (backup) deve includere `fonts` (blob in fonts/<id>.<ext>), `rules` e le tabelle del log (`matches`, `matchUnits`, `matchEvents`).
 - PASSO 8 (Azioni) REALIZZATO, DA PROVARE SUL TELEFONO. CACHE_VERSION 'v13'. Dettaglio nella sezione "Passo 8". Test: `node tests/actions-test.mjs` (16 controlli), `python3 tests/ui-azioni-test.py` (Chrome headless, ~75 controlli); i test dei Passi 6 e 7 restano verdi (`ui-crea-test.py` ora attende 48 azioni in griglia: 40 di prova + 8 di Kill Team; ha 2-3 controlli sensibili ai tempi che a volte falliscono una volta su una decina e passano alla ripetizione). Il Passo 6 resta aperto in attesa del nuovo `diagnostica-pdf.json` di Manu.
@@ -413,7 +415,29 @@ Scopo: registrare la partita mentre si gioca (o ricostruirla dopo, a mano) in mo
 
 Verifica: registri due turni di una partita Kill Team fra due squadre; la cronologia dice chi aveva l'iniziativa e come, in che ordine hanno attivato, quanti danni ha fatto ogni azione e quante ferite restano; l'operativo a 0 ferite risulta incapacitato; "annulla" riporta le ferite di prima.
 
-### Passo 11 – Sticker dal log e coda (NUOVO, 23/11/2026, DA REALIZZARE)
+### Passo 11 – Sticker dal log e coda (FATTO, da provare sul telefono)
+
+Realizzato (23/11/2026, CACHE_VERSION 'v16'). Decisioni di Vando prese prima di costruire: (1) "Genera sticker della partita" dal MENU ⋮ della partita; (2) coda con schermata propria `#/coda` e icona con contatore; (3) coda PERSISTITA in IndexedDB; (4) gli sticker dal log NON entrano in recenti e preferiti.
+
+- Template `result` ("Risultato"): `D.TEMPLATE_KINDS` = activation, action, result. Origini di riga in `render.js` (`LINE_SOURCES`, `normalizeConfig`): `target`, `damage` ("-3"), `woundsLeft` ("rimangono 5"/"rimane 1"), `status` ("INCAPACITATO") e, AGGIUNTA rispetto alla specifica, `damageLeft` ("-3 · rimangono 5", o "-3" se il bersaglio non ha ferite tracciate): serve per la riga unica del predefinito. Testi vuoti = riga non scritta. `data` di `renderSticker` ha `targetName, damageText, woundsLeftText, damageLeftText, statusText`. Editor: `sourcesFor('result')`, `groupsFor('result')` (immagine = BERSAGLIO, immagine arma = arma usata), `SAMPLE.result`, `newLine('result')`, sezione "Risultato" in Template. Predefinito "Risultato" creato una volta sola (`settings.seededResultTemplate`, `defaultTemplates.result`); gli altri template restano identici byte per byte (provato).
+- `db.version(4)`: aggiunge `queue: '++id, &key'` = `{ key, name, label, blob, createdAt }`. `queueAdd/queueList/queueCount/queueRemove/queueClear`; ogni modifica emette l'evento `sbr-queue`. Chiave unica: rigenerare lo stesso sticker dal log (`m<partita>-e<evento>`) sostituisce la riga (va in coda); gli sticker aggiunti dall'Anteprima senza log hanno chiave casuale.
+- `js/logsticker.js` (PURO): `itemFor/buildItems` ricavano dagli eventi le voci da stickerare, nell'ordine del log: activation -> template activation (attaccante + arma del primo attacco/azione con arma prima della prossima attivazione); action -> action (nome copiato nell'evento); damage -> result (bersaglio, `amount` inflitto, `woundsLeft` dal replay, INCAPACITATO se c'e' l'evento incapacitated confermato); score -> result (lato e motivo, "+2 punti"). Attacchi, incapacitati, inizio turno e note non hanno sticker.
+- `js/logsource.js` (con database). DECISIONE (dati dal log all'Anteprima): `#/anteprima?match=<partita>&ev=<evento>`; nomi e testi vengono dal LOG (copiati), le righe di Libreria (`unitId` della rosa, `weaponId`/`actionId` dell'evento) servono solo per le immagini e solo se esistono ancora (altrimenti solo il nome; l'interruttore immagine risulta "non importata"). Azione PNG ancora in Libreria: esce identica (stessi byte); se eliminata si disegna col nome copiato. I percorsi esistenti (`unit/weapon/action`) non cambiano. Dal log: nessuna stella, nessun `recordUse` (recenti, preferiti, lastUsed, useCount intatti).
+- Anteprima dal log: template del tipo (i punti usano Risultato), campi modificabili solo per quello sticker (Risultato: bersaglio, danni, ferite rimaste, stato, attaccante, arma). "Aggiungi alla coda" (anche nel percorso Libreria) salva il PNG che si vede.
+- Log: "Crea sticker" nel menu di ogni voce con sticker; menu ⋮ partita > "Genera sticker della partita…": spunte per tipo con i numeri (tutte accese), progress con "Interrompi" (quelli gia' in coda restano), esito con "Apri la coda". Nomi file `BR_<partita>_<nnn>_<parti>.png`, nnn = numero della voce nel log (3 cifre; senza data, quindi rigenerare da' lo stesso nome).
+- Coda: icona ⇩ con contatore in Anteprima, partita e Altro; `#/coda` (js/screens/coda.js) con elenco, miniature e ✕; in Altro e in `#/coda`: "Salva tutti" (un download ogni 400 ms, non svuota), "Condividi tutti" (una condivisione, ripiego sul download), "Svuota coda" (conferma). Sopravvive al ricaricamento.
+- Non fatto (fuori dal Passo): riordino manuale della coda, sticker per turn-start/attack/incapacitated/note, scelta di singole voci (solo per tipo).
+- Nuovi file in sw.js: js/logsticker.js, js/logsource.js, js/screens/coda.js. Backup (Passo 12): includere `queue` (blob in queue/<id>.png), `fonts`, `rules`, `matches`, `matchUnits`, `matchEvents` e il template "Risultato".
+
+VERIFICA SUL TELEFONO (Passo 11):
+1. Template: c'e' "Risultato" (predefinito); aprilo e modifica colori/righe: l'anteprima segue.
+2. Log > partita con danni > Cronologia > tocco su un danno > "Crea sticker": bersaglio, danni, ferite rimaste (INCAPACITATO se confermato); modifica un testo, Salva: in Download `BR_<partita>_<nnn>_...`; Crea > Recenti non cambia.
+3. "Aggiungi alla coda": il contatore sull'icona sale.
+4. Menu ⋮ partita > "Genera sticker della partita…": spunta i tipi, Genera, "Apri la coda": ordine del log; Altro > "Salva tutti": i file in Download in ordine, uno ogni mezzo secondo.
+5. Chiudi e riapri l'app: la coda c'e' ancora; "Svuota coda" la svuota.
+6. In InShot gli sticker (con trasparenza) si montano nell'ordine dei nomi.
+
+Piano originale del passo:
 
 Scopo: dal log di una partita ottenere gli sticker del battle report senza riscrivere nulla.
 
