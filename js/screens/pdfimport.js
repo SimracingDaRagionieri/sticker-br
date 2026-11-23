@@ -141,7 +141,7 @@ function draw(el, game, faction) {
     <p class="meta" data-summary>${faction ? `Aggiorna «${esc(faction.name)}».` : ''}</p>
     <h2>Immagini</h2>
     <label class="check"><input type="checkbox" data-opt="weapons" checked><span>Ritaglia i profili arma dal PDF (riga della tabella con intestazione)</span></label>
-    <label class="check"><input type="checkbox" data-opt="units" ${t.operatives.some((o) => o.boxes.portrait) ? 'checked' : 'disabled'}><span>Ritaglia il ritratto degli operativi${t.operatives.some((o) => o.boxes.portrait) ? ` (trovato in ${t.operatives.filter((o) => o.boxes.portrait).length})` : ' (nessuna immagine trovata)'}</span></label>
+    <label class="check"><input type="checkbox" data-opt="units" ${t.operatives.some((o) => o.boxes.portrait) ? '' : 'disabled'}><span>Ritaglia il ritratto degli operativi${t.operatives.some((o) => o.boxes.portrait) ? ` (trovato in ${t.operatives.filter((o) => o.boxes.portrait).length})` : ' (nessuna immagine trovata)'}</span></label>
     <h2>Operativi (${t.operatives.length})</h2>
     ${opsHTML}
     <h2>Regole</h2>
@@ -150,6 +150,7 @@ function draw(el, game, faction) {
     ${rulesList('Stratagemmi Firefight', t.ploys.filter((p) => p.kind === 'firefight'), ruleRow)}
     ${rulesList('Equipaggiamento', t.equipment, ruleRow)}
     ${t.ignoredPages.length ? `<details class="pdf-op"><summary><span class="pdf-op-name">Pagine ignorate</span><span class="meta">${t.ignoredPages.length}</span></summary>${t.ignoredPages.map((p) => `<p class="pdf-txt">Pag. ${p.page}${p.heading ? ` «${esc(p.heading)}»` : ''}: ${esc(p.reason)}</p>`).join('')}</details>` : ''}
+    <p class="meta"><button type="button" data-diag>Salva file di diagnostica</button> Se qualcosa non torna, invia questo file (testo del PDF e posizioni, nessuna immagine).</p>
     <div class="pdf-bar"><button type="button" data-cancel>Annulla</button><button type="button" class="primary" data-save>Salva${t.warnings.length ? ' (con avvisi)' : ''}</button></div>`;
 
   wire(el, game, faction);
@@ -213,8 +214,23 @@ function wire(el, game, faction) {
     reparse();
     draw(el, game, faction);
   });
+  el.querySelector('[data-diag]').addEventListener('click', () => saveDiagnostics());
   el.querySelector('[data-cancel]').addEventListener('click', () => history.back());
   el.querySelector('[data-save]').addEventListener('click', () => save(el, game, faction));
+}
+
+// ---------- diagnostica ----------
+
+// File JSON con quanto estratto dal PDF (testo, posizioni, font, avvisi): permette di riprodurre la lettura fuori dal telefono.
+function saveDiagnostics() {
+  const P = pending;
+  const data = { app: 'sticker-br', version: 1, fileName: P.fileName, title: P.title, lang: P.lang, warnings: P.team.warnings, report: P.team.report, ignoredPages: P.team.ignoredPages, pages: P.pages };
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'diagnostica-pdf.json' });
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  toast('File di diagnostica salvato (cartella Download)');
 }
 
 // ---------- scelte a tre vie ----------
@@ -270,7 +286,9 @@ async function weaponImage(box) {
 }
 
 async function portraitImage(box) {
-  const c = await renderRect(pending.doc, box.page, box, { scale: DPI / 72, makeCanvas });
+  // scala adattiva: il lato lungo non supera MAX_SIDE (evita canvas enormi sul telefono)
+  const scale = Math.min(DPI / 72, MAX_SIDE / Math.max(box.w, box.h));
+  const c = await renderRect(pending.doc, box.page, box, { scale, makeCanvas });
   return finishImage(c);
 }
 

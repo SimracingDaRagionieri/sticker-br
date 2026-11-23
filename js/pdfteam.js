@@ -342,7 +342,8 @@ function readTable(lines, h, region, ctx) {
 
 // ---------- blocchi di testo (abilita', azioni, stratagemmi, equipaggiamento) ----------
 
-const SENTENCE_END = /[.!?:;"”)]$/;
+// Fine frase: punteggiatura finale, anche chiusa da virgolette/parentesi. Un `"` dopo una cifra e' un pollice (3"), non una fine frase.
+const SENTENCE_END = /[.!?:;]$|[.!?]["”)]$/;
 
 // lines = righe gia' filtrate; opts.cost(item) -> costo se l'elemento e' un costo. Restituisce { blocks, orphans, continues }.
 function readBlocks(lines, D, { costRe, pageNum, onContinue }) {
@@ -360,7 +361,9 @@ function readBlocks(lines, D, { costRe, pageNum, onContinue }) {
       if (ci) { cost = ci.str.trim().replace(/\s+/g, '').toUpperCase(); items = items.filter((it) => it !== ci); }
     }
     const bs = boldStart(items);
-    const startsBlock = bs && (cost != null || !cur || !cur.text || SENTENCE_END.test(cur.text.trim()));
+    // Una parola chiave in grassetto a inizio riga seguita da ")" "," "." (es. "BEACON) would...") e' dentro una frase, non un titolo.
+    const inlineKeyword = bs && cost == null && cur && /^[),.;\]]/.test(bs.rest.trim());
+    const startsBlock = bs && !inlineKeyword && (cost != null || !cur || !cur.text || SENTENCE_END.test(cur.text.trim()));
     if (startsBlock) {
       flush();
       cur = { title: bs.title.replace(/[:\s]+$/, ''), cost, text: bs.rest, page: pageNum, y: l.y };
@@ -580,6 +583,7 @@ function readCardPage(page, anchors, D, cards, warn) {
       const oy = Math.min(im.y + im.h, bandBot) - Math.max(im.y, bandTop - 12);
       if (ox <= 0 || oy <= 0) continue;
       const frac = (ox * oy) / (im.w * im.h);
+      if (im.w * im.h > 0.35 * page.width * page.height) continue; // sfondo a pagina intera: non e' un ritratto
       if (frac > 0.6 && ox * oy > bestOv) { bestOv = ox * oy; portrait = rect(page.num, im.x, im.y, im.x + im.w, im.y + im.h); }
     }
     card.portrait = portrait;

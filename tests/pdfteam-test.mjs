@@ -230,5 +230,20 @@ for (const f of realFiles) {
   } else console.log('  (nessun .expect.json: confronta a occhio con pdftoppm)');
 }
 
+// Regressione: riga che finisce con i pollici (3") + parola chiave in grassetto a inizio riga = stessa frase, non un nuovo titolo.
+{
+  const t = (str, x, y, bold = false, h = 8) => ({ str, x, y, w: str.length * 4, h, font: bold ? 'F-Bold' : 'F', bold });
+  const items = [
+    t('TESTUNIT', 40, 60, true, 20), t('APL', 40, 80), t('MOVE', 100, 80), t('SAVE', 160, 80), t('WOUNDS', 220, 80),
+    t('2', 42, 94, true, 12), t('6"', 102, 94, true, 12), t('5+', 162, 94, true, 12), t('8', 222, 94, true, 12),
+    t('Field Thing', 40, 120, true), t('Whenever a friendly operative within 3"', 40, 132),
+    t('BEACON', 40, 144, true), t(') would be incapacitated, you can use this.', 70, 144),
+    t('Second Thing', 40, 160, true), t('Does something else.', 110, 160)
+  ];
+  const ab = parseTeam([{ num: 1, width: 400, height: 600, items, images: [] }], { title: 'X' }).operatives[0].abilities;
+  eq(ab.map((a) => a.name), ['Field Thing', 'Second Thing'], 'inline: titoli abilita\'');
+  ok(/within 3" BEACON \) would be incapacitated/.test(ab[0].text), 'inline: la frase resta intera');
+}
+
 console.log(`\n${checks - fails}/${checks} controlli superati${fails ? `, ${fails} FALLITI` : ''}.`);
 process.exit(fails ? 1 : 0);
