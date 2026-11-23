@@ -97,6 +97,7 @@ export async function render(el) {
         <button type="button" class="back" data-back aria-label="Indietro">‹</button>
         <h1>Anteprima sticker</h1>
       </div>
+      <button type="button" class="star-btn" data-fav aria-pressed="false" aria-label="Combinazione preferita">☆</button>
     </div>
     ${ctxLine ? `<p class="meta pv-ctx">${esc(ctxLine)}</p>` : ''}
     <div class="preview checker-bg" id="pv">
@@ -179,6 +180,29 @@ export async function render(el) {
   }
   const drawSoon = () => { dirty = true; clearTimeout(timer); timer = setTimeout(draw, 150); };
 
+  // --- stella: combinazione preferita (miniatura + arma + template, oppure azione + template) ---
+  const favBtn = $('[data-fav]');
+  const comboParts = () => ({
+    unitId: unit ? unit.id : null, weaponId: weapon ? weapon.id : null,
+    actionId: action ? action.id : null, templateId: st.tpl.id
+  });
+  const paintFav = (on) => {
+    favBtn.setAttribute('aria-pressed', String(on));
+    favBtn.textContent = on ? '★' : '☆';
+  };
+  const syncFav = () => D.isFavCombo(comboParts()).then((on) => { if (alive()) paintFav(on); }).catch(() => {});
+  syncFav();
+  favBtn.addEventListener('click', async () => {
+    try {
+      const on = await D.toggleFavCombo(comboParts());
+      paintFav(on);
+      toast(on ? 'Aggiunto ai preferiti' : 'Tolto dai preferiti');
+    } catch (err) {
+      console.error(err);
+      toast('Errore: ' + err.message);
+    }
+  });
+
   // --- interazioni ---
   $('[data-back]').addEventListener('click', () => {
     if (canGoBack()) history.back();
@@ -191,6 +215,7 @@ export async function render(el) {
     st.tpl = t;
     resetToggles();
     syncToggles();
+    syncFav();
     el.querySelectorAll('[data-tpl]').forEach((c) => c.setAttribute('aria-pressed', String(Number(c.dataset.tpl) === t.id)));
     // Tengo l'indirizzo aggiornato senza aggiungere voci alla cronologia: "indietro" torna comunque alla provenienza.
     const params = parseHash().query;

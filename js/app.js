@@ -39,17 +39,25 @@ let navCount = 0;
 let current = null; // modulo della schermata aperta
 export const canGoBack = () => navCount > 0;
 
+let navToken = 0;
 async function navigate() {
+  const my = ++navToken;
   const { name } = parseHash();
   const key = routes[name] ? name : 'crea';
   if (!NO_TAB.has(key)) {
     document.querySelectorAll('.tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.route === key));
   }
   if (current && current.cleanup) current.cleanup(); // le schermate possono liberare memoria quando si esce
-  view.innerHTML = '';
+  current = null;
+  view.replaceChildren();
   const mod = await routes[key]();
+  if (my !== navToken) return; // nel frattempo si e' gia' passati a un'altra schermata
   current = mod;
-  mod.render(view);
+  // Ogni schermata disegna in un contenitore suo: se una schermata lasciata finisce di caricare in ritardo
+  // (tasto indietro premuto subito) scrive in un contenitore staccato e non sovrascrive quella nuova.
+  const holder = document.createElement('div');
+  view.replaceChildren(holder);
+  mod.render(holder);
   window.scrollTo(0, 0);
 }
 

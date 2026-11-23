@@ -218,13 +218,18 @@ export async function getStickerSource({ unitId = null, weaponId = null, actionI
 
 const MAX_RECENTS = 30;
 
-// Dopo Salva/Condividi: aggiorna lastUsed/useCount e la tabella recents (chiave unica, massimo 30).
-export async function recordUse({ unitId = null, weaponId = null, actionId = null, templateId = null }) {
-  const now = Date.now();
-  const key = [
+// Chiave unica di una combinazione sticker (recenti e preferiti), es. "u12-w40-t1".
+export function comboKey({ unitId = null, weaponId = null, actionId = null, templateId = null } = {}) {
+  return [
     unitId != null ? 'u' + unitId : '', weaponId != null ? 'w' + weaponId : '',
     actionId != null ? 'a' + actionId : '', templateId != null ? 't' + templateId : ''
   ].filter(Boolean).join('-');
+}
+
+// Dopo Salva/Condividi: aggiorna lastUsed/useCount e la tabella recents (chiave unica, massimo 30).
+export async function recordUse({ unitId = null, weaponId = null, actionId = null, templateId = null }) {
+  const now = Date.now();
+  const key = comboKey({ unitId, weaponId, actionId, templateId });
   if (!key) return;
   await db.transaction('rw', db.units, db.weapons, db.actions, db.recents, async () => {
     if (unitId != null) {
@@ -242,6 +247,43 @@ export async function recordUse({ unitId = null, weaponId = null, actionId = nul
       const ids = await db.recents.orderBy('usedAt').limit(extra).primaryKeys();
       await db.recents.bulkDelete(ids);
     }
+  });
+}
+
+// Recenti, dal piu' recente. Le righe possono riferirsi a elementi eliminati: chi legge deve ignorarle.
+export async function listRecents() {
+  return db.recents.orderBy('usedAt').reverse().toArray();
+}
+
+// ---------- impostazioni e combinazioni preferite (Passo 7) ----------
+
+export async function getSetting(key, fallback = null) {
+  const s = await db.settings.get(key);
+  return s && s.value !== undefined ? s.value : fallback;
+}
+export const setSetting = (key, value) => db.settings.put({ key, value });
+
+// settings.favCombos = [{ key, unitId, weaponId, actionId, templateId, addedAt }]
+export async function listFavCombos() {
+  const v = await getSetting('favCombos', []);
+  return Array.isArray(v) ? v : [];
+}
+
+export async function isFavCombo(parts) {
+  const key = comboKey(parts);
+  return !!key && (await listFavCombos()).some((c) => c.key === key);
+}
+
+// Aggiunge o toglie la combinazione; restituisce il nuovo stato (true = preferita).
+export async function toggleFavCombo({ unitId = null, weaponId = null, actionId = null, templateId = null }) {
+  const key = comboKey({ unitId, weaponId, actionId, templateId });
+  if (!key) return false;
+  return db.transaction('rw', db.settings, async () => {
+    const list = await listFavCombos();
+    const has = list.some((c) => c.key === key);
+    const next = has ? list.filter((c) => c.key !== key) : [...list, { key, unitId, weaponId, actionId, templateId, addedAt: Date.now() }];
+    await setSetting('favCombos', next);
+    return !has;
   });
 }
 
