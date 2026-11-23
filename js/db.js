@@ -175,6 +175,27 @@ export async function addFaction(gameId, name) {
   return db.factions.add({ gameId, name: cleanName(name), order, accentColor: null, fav: 0 });
 }
 
+// ---------- azioni ----------
+
+// Colore accento: stringa '#rrggbb' oppure null (nessun colore). Campo senza indice.
+function cleanColor(color) {
+  const c = String(color ?? '').trim();
+  return /^#[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : null;
+}
+
+export async function listActions(gameId) { return (await db.actions.where('gameId').equals(gameId).toArray()).sort(byName); }
+
+export async function addAction(gameId, name, accentColor = null) {
+  if (!(await db.games.get(gameId))) throw new Error('Gioco non trovato');
+  return db.actions.add({ gameId, name: cleanName(name), accentColor: cleanColor(accentColor), fav: 0, lastUsed: 0 });
+}
+
+export async function deleteAction(id) { await db.actions.delete(id); }
+
+export async function setActionColor(id, accentColor) {
+  await db.actions.update(id, { accentColor: cleanColor(accentColor) });
+}
+
 // ---------- miniature ----------
 
 export async function addUnit(factionId, name) {

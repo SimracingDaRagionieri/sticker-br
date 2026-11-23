@@ -11,6 +11,21 @@ const KIND_OPTIONS = Object.entries(KIND_LABEL).map(([value, label]) => ({ value
 const lc = (s) => String(s || '').toLowerCase();
 const link = (...parts) => '#/libreria' + parts.map((p) => '/' + p).join('');
 
+// Colori accento delle azioni (valore salvato: '#rrggbb' oppure '' = nessuno).
+const ACTION_COLORS = [
+  ['', 'Nessuno'], ['#e53935', 'Rosso'], ['#fb8c00', 'Arancione'], ['#fdd835', 'Giallo'],
+  ['#43a047', 'Verde'], ['#00acc1', 'Azzurro'], ['#1e88e5', 'Blu'], ['#8e24aa', 'Viola'],
+  ['#ec407a', 'Rosa'], ['#bdbdbd', 'Grigio'], ['#ffffff', 'Bianco']
+];
+
+function colorField(current) {
+  const cur = String(current || '').toLowerCase();
+  const options = ACTION_COLORS.map(([value, label]) => ({ value, label }));
+  // Un colore non in elenco (es. impostato in futuro) resta selezionabile e non va perso.
+  if (cur && !ACTION_COLORS.some(([v]) => v === cur)) options.push({ value: cur, label: `Personalizzato (${cur})` });
+  return { name: 'color', label: 'Colore accento (facoltativo)', type: 'select', value: cur, options };
+}
+
 // Azioni sulle immagini, per tipo di elemento.
 const IMG_API = {
   unit: { set: D.setUnitImage, remove: D.removeUnitImage },
@@ -120,13 +135,13 @@ function sectionHead(title, key) {
     <button type="button" class="add" data-add="${key}" aria-label="Aggiungi">+</button></div>`;
 }
 
-function listHTML(key, items, { href, meta, empty, thumb }) {
+function listHTML(key, items, { href, meta, empty, thumb, dot }) {
   if (!items.length) return `<p class="empty">${esc(empty)}</p>`;
   return `<ul class="list" data-list="${key}">${items.map((it) => `
     <li class="item">
       ${thumb ? thumbHTML(thumb(it)) : ''}
       ${href ? `<a class="item-main" href="${href(it)}">` : '<div class="item-main">'}
-        <span class="item-name">${it.fav ? '<span class="star">★</span> ' : ''}${esc(it.name)}</span>
+        <span class="item-name">${it.fav ? '<span class="star">★</span> ' : ''}${dot && dot(it) ? `<span class="dot" style="background:${esc(dot(it))}"></span>` : ''}${esc(it.name)}</span>
         ${meta && meta(it) ? `<span class="item-meta">${esc(meta(it))}</span>` : ''}
       ${href ? '<span class="chev">›</span></a>' : '</div>'}
       <button type="button" class="kebab" data-menu="${it.id}" aria-label="Menu di ${esc(it.name)}">⋮</button>
@@ -213,15 +228,47 @@ async function gamesScreen(ctx) {
 
 async function gameScreen(ctx) {
   const { game } = ctx;
-  const factions = await D.listFactions(game.id);
+  const [factions, actions] = await Promise.all([D.listFactions(game.id), D.listActions(game.id)]);
   const L = game.labels;
   const html = `
     ${crumbs([{ label: 'Libreria', href: link() }, { label: game.name }])}
     <h1>${esc(game.name)}</h1>
     ${sectionHead(L.faction, 'faction')}
-    ${listHTML('faction', factions, { href: (f) => link('g' + game.id, 'f' + f.id), empty: `Vuoto. Tocca + per aggiungere: ${L.faction}.` })}`;
+    ${listHTML('faction', factions, { href: (f) => link('g' + game.id, 'f' + f.id), empty: `Vuoto. Tocca + per aggiungere: ${L.faction}.` })}
+    ${sectionHead('Azioni', 'action')}
+    ${listHTML('action', actions, { dot: (a) => a.accentColor, empty: 'Nessuna azione. Tocca + per aggiungerne una (es. Overwatch, Charge).' })}`;
 
   const wire = (root) => {
+    onAdd(root, 'action', async () => {
+      const v = await formSheet({
+        title: 'Nuova azione',
+        fields: [{ name: 'name', label: 'Nome', type: 'text', required: true }, colorField('')]
+      });
+      if (!v) return;
+      await guard(async () => { await D.addAction(game.id, v.name, v.color); ctx.refresh(); });
+    });
+    onMenu(root, 'action', actions, (a) => entityMenu(a, {
+      ctx, table: 'actions',
+      extra: [{
+        label: 'Colore accento',
+        run: async () => {
+          const v = await formSheet({ title: `Colore: ${a.name}`, fields: [colorField(a.accentColor)] });
+          if (!v) return;
+          await guard(async () => { await D.setActionColor(a.id, v.color); ctx.refresh(); });
+        }
+      }],
+      rename: async () => {
+        const v = await formSheet({ title: 'Rinomina azione', fields: [{ name: 'name', label: 'Nome', value: a.name, type: 'text', required: true }] });
+        if (!v) return;
+        await guard(async () => { await D.patch('actions', a.id, { name: v.name }); ctx.refresh(); });
+      },
+      remove: async () => {
+        const ok = await confirmSheet({ title: `Eliminare «${a.name}»?`, confirmLabel: 'Elimina', danger: true });
+        if (!ok) return;
+        await guard(async () => { await D.deleteAction(a.id); toast('Eliminata'); ctx.refresh(); });
+      }
+    }));
+
     onAdd(root, 'faction', async () => {
       const v = await formSheet({ title: `Nuova ${lc(L.faction)}`, fields: [{ name: 'name', label: 'Nome', type: 'text', required: true }] });
       if (!v) return;
