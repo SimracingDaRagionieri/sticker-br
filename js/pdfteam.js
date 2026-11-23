@@ -20,7 +20,7 @@ export const LANGS = {
   en: {
     stats: { apl: 'APL', move: 'MOVE', save: 'SAVE', wounds: 'WOUNDS' },
     cols: { name: 'NAME', atk: 'ATK', hit: 'HIT', dmg: 'DMG', wr: 'WR' },
-    continues: /RULES\s+CONTINUE(?:D)?\s+ON\s+(?:THE\s+)?(?:BACK|OTHER\s+SIDE|REVERSE)/i,
+    continues: /RULES?\s+CONTINUE[SD]?\s+ON\s+(?:THE\s+)?(?:BACK|OTHER\s+SIDE|REVERSE)/i,
     actionCost: /^(\d+)\s*AP$/i,
     ployCost: /^(\d+)\s*CP$/i,
     pages: {
@@ -372,7 +372,8 @@ function readBlocks(lines, D, { costRe, pageNum, onContinue }) {
     }
     // Una parola chiave in grassetto a inizio riga seguita da ")" "," "." (es. "BEACON) would...") e' dentro una frase, non un titolo.
     const inlineKeyword = bs && cost == null && cur && /^[),.;\]]/.test(bs.rest.trim());
-    const startsBlock = bs && !inlineKeyword && (cost != null || !cur || !cur.text || SENTENCE_END.test(cur.text.trim()));
+    const waitingText = cur && !cur.text && cost == null && bs && !/:\s*$/.test(bs.title);
+    const startsBlock = bs && !inlineKeyword && !waitingText && (cost != null || !cur || !cur.text || SENTENCE_END.test(cur.text.trim()));
     if (startsBlock) {
       flush();
       cur = { title: bs.title.replace(/[:\s]+$/, ''), cost, text: bs.rest, page: pageNum, y: l.y };
@@ -389,6 +390,25 @@ function readBlocks(lines, D, { costRe, pageNum, onContinue }) {
 
 // Riga tutta maiuscola con virgole; in coda puo' esserci la dimensione della base (es. "... SWARMGUARD 28" o "40mm").
 const stripBase = (t) => t.replace(/\s+\d{2,3}\s?(?:mm)?$/i, '');
+// Due colonne di testo affiancate nella stessa carta (es. "Grenadier:" a sinistra, "Melta Mine:" a destra): si cerca un vuoto
+// verticale tra gli elementi; se c'e' si legge prima tutta la colonna sinistra e poi la destra.
+function splitColumns(lines, costRe) {
+  const items = lines.filter((l) => !l.items.some((i) => costRe && costRe.test(i.str.trim()))).flatMap((l) => l.items);
+  if (items.length < 6) return lines;
+  const iv = items.map((i) => [i.x, i.x + i.w]).sort((a, b) => a[0] - b[0]);
+  let edge = iv[0][1], cut = null;
+  for (let k = 1; k < iv.length; k++) {
+    if (iv[k][0] - edge >= 8) {
+      const x = (edge + iv[k][0]) / 2;
+      if (items.filter((i) => i.x + i.w / 2 < x).length >= 3 && items.filter((i) => i.x + i.w / 2 >= x).length >= 3) { cut = x; break; }
+    }
+    edge = Math.max(edge, iv[k][1]);
+  }
+  if (cut == null) return lines;
+  const all = lines.flatMap((l) => l.items);
+  return [...buildLines(all.filter((i) => i.x + i.w / 2 < cut)), ...buildLines(all.filter((i) => i.x + i.w / 2 >= cut))];
+}
+
 const isKeywordLine = (t) => { const k = stripBase(t); return k.includes(',') && k === k.toUpperCase() && /[A-Z]/.test(k) && !/\d/.test(k) && k.length < 200; };
 
 // ---------- parser ----------
@@ -418,8 +438,11 @@ export function parseTeam(rawPages, { lang = 'en', name = null, title = '' } = {
       readCardPage(page, anchors, D, cards, warn);
       continue;
     }
-    readRulesPage(page, D, { factionRule, ploys, equipment, ignoredPages }, warn);
+    if (!readRuleSheet(page, D, { factionRule, ploys, equipment, ignoredPages }, warn)) {
+      readRulesPage(page, D, { factionRule, ploys, equipment, ignoredPages }, warn);
+    }
   }
+  mergeCards(factionRule); mergeCards(equipment); mergeCards(ploys);
 
   // ----- unione fronte/retro per nome -----
   const byName = new Map();
@@ -431,7 +454,7 @@ export function parseTeam(rawPages, { lang = 'en', name = null, title = '' } = {
   const operatives = [];
   for (const [key, group] of byName) {
     const first = group[0];
-    const op = { name: first.name, stats: { ...first.stats }, weapons: [], abilities: [], actions: [], keywords: [], pages: [], boxes: { header: first.box, portrait: first.portrait || null }, continues: group.some((g) => g.continues) };
+    const op = { name: first.name, stats: { ...first.stats }, weapons: [], abilities: [], actions: [], keywords: [], pages: [], boxes: { header: first.box, portrait: first.portrait || null }, continues: group.some((g) => g.continues), hadTable: group.some((g) => g.hadTable) };
     if (group.length > 2) warn('card-count', first.page, `"${first.name}" compare su ${group.length} carte (attese 1 o 2: fronte e retro)`, first.name);
     for (const g of group) {
       if (!op.pages.includes(g.page)) op.pages.push(g.page);
@@ -454,7 +477,7 @@ export function parseTeam(rawPages, { lang = 'en', name = null, title = '' } = {
       if (op.stats[k] == null) warn('stat-missing', first.page, `"${op.name}": statistica ${D.stats[k]} non trovata`, op.name);
       else if (!FORMAT[k].test(op.stats[k])) warn('stat-format', first.page, `"${op.name}": ${D.stats[k]} "${op.stats[k]}" non e' nel formato atteso`, op.name);
     }
-    if (!op.weapons.length) warn('no-weapons', first.page, `"${op.name}": nessuna arma trovata`, op.name);
+    if (!op.weapons.length && op.hadTable) warn('no-weapons', first.page, `"${op.name}": nessuna arma trovata`, op.name);
     const seen = new Set();
     for (const w of op.weapons) {
       const kk = normName(displayWeaponName(w.name, w.mode));
@@ -468,8 +491,8 @@ export function parseTeam(rawPages, { lang = 'en', name = null, title = '' } = {
   // ----- squadra -----
   const common = operatives.length ? operatives.map((o) => o.keywords).reduce((a, b) => a.filter((k) => b.includes(k))) : [];
   let fname = name && name.trim() ? name.trim() : null, nameSource = fname ? 'manuale' : null;
-  if (!fname && title && title.trim()) { fname = title.trim(); nameSource = 'titolo del PDF'; }
   if (!fname && common.length) { fname = common[0]; nameSource = 'parole chiave'; }
+  if (!fname && title && title.trim()) { fname = title.trim(); nameSource = 'titolo del PDF'; }
   if (!fname) warn('faction-name', 0, 'Nome della squadra non rilevato: scrivilo nella revisione', '');
 
   // ----- controlli globali -----
@@ -603,6 +626,7 @@ function readCardPage(page, anchors, D, cards, warn) {
 
     // tabelle armi
     const used = new Set();
+    card.hadTable = findTableHeader(lines, D).length > 0;
     for (const h of findTableHeader(lines, D)) {
       if (used.has(h.idx)) continue;
       const t = readTable(lines, h, region, { page, D, warn });
@@ -616,8 +640,9 @@ function readCardPage(page, anchors, D, cards, warn) {
     for (const l of kwLines) card.keywords.push(...stripBase(l.text).split(',').map((s) => s.trim()).filter(Boolean));
     const body = rest.filter((l) => !kwLines.includes(l));
 
-    const { blocks, orphans } = readBlocks(body, D, { costRe: D.actionCost, pageNum: page.num, onContinue: () => { card.continues = true; } });
+    const { blocks, orphans } = readBlocks(splitColumns(body, D.actionCost), D, { costRe: D.actionCost, pageNum: page.num, onContinue: () => { card.continues = true; } });
     for (const b of blocks) {
+      if (!b.text && !b.cost && /^NOTES?$/i.test(b.title)) continue;
       if (b.cost) card.actions.push({ name: b.title, cost: b.cost, text: b.text });
       else card.abilities.push({ name: b.title, text: b.text });
       if (!b.text && !b.cost) warn('empty-block', page.num, `"${card.name}": "${b.title}" senza testo`, b.title);
@@ -658,6 +683,121 @@ function readRulesPage(page, D, out, warn) {
     else if (kind === 'equipment') out.equipment.push({ name: e.name, text: e.text, page: e.page });
     else out.ploys.push({ kind, name: e.name, cost: e.cost, text: e.text, page: e.page });
   }
+}
+
+// ---------- fogli di carte regola (stratagemmi, regole di fazione, equipaggiamento: piu' carte per pagina) ----------
+
+const CARD_NO = /\(\s*CARD\s+(\d+)\s*\/\s*(\d+)\s*\)/i;
+
+function cardCells(page) {
+  const big = (page.images || []).filter((im) => im.w > 150 && im.w < 260 && im.h > 300 && im.h < 400)
+    .sort((a, b) => a.y - b.y || a.x - b.x);
+  const cells = [];
+  for (const im of big) if (!cells.some((c) => Math.abs(c.x - im.x) < 6 && Math.abs(c.y - im.y) < 6)) cells.push({ x: im.x, y: im.y, w: im.w, h: im.h });
+  if (cells.length < 2) return null;
+  const rows = [];
+  for (const c of cells) {
+    let r = rows.find((q) => Math.abs(q.y - c.y) < 30);
+    if (!r) { r = { y: c.y, cells: [] }; rows.push(r); }
+    r.cells.push(c);
+  }
+  rows.sort((a, b) => a.y - b.y);
+  return rows.flatMap((r) => r.cells.sort((a, b) => a.x - b.x));
+}
+
+const avgH = (lines) => lines.reduce((s, l) => s + l.h, 0) / (lines.length || 1);
+
+// Legge un foglio di carte regola. Restituisce true se la pagina e' un foglio (anche se nessuna carta e' riconosciuta).
+function readRuleSheet(page, D, out, warn) {
+  const cells = cardCells(page);
+  if (!cells) return false;
+  const buckets = cells.map(() => []);
+  for (const it of page.items) {
+    const x = cx(it), y = it.y - (it.h || 8) / 2;
+    let best = -1, bd = Infinity;
+    cells.forEach((c, k) => {
+      if (x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h) {
+        const d = Math.abs(x - (c.x + c.w / 2));
+        if (d < bd) { bd = d; best = k; }
+      }
+    });
+    if (best >= 0) buckets[best].push(it);
+  }
+  let found = 0, prev = null;
+  buckets.forEach((items) => {
+    if (!items.length) { prev = null; return; }
+    let lines = buildLines(items);
+    let continues = false;
+    lines = lines.filter((l) => { if (D.continues.test(l.text)) { continues = true; return false; } return true; });
+    const labelIdx = lines.findIndex((l) => l.h >= 12 && ['strategy', 'firefight', 'equipment', 'factionRule'].some((k) => D.pages[k].test(l.text)));
+    if (labelIdx < 0) {
+      // senza etichetta: retro della carta precedente (se quella dichiarava "continua sull'altro lato"), altrimenti non e' una regola
+      if (prev && prev.continues) {
+        prev.entry.text = joinLines(prev.entry.text, lines);
+        prev.continues = continues;
+      } else prev = null;
+      return;
+    }
+    const kind = ['strategy', 'firefight', 'equipment', 'factionRule'].find((k) => D.pages[k].test(lines[labelIdx].text));
+    const rest = lines.slice(labelIdx + 1);
+    if (!rest.length) { warn('rules-empty', page.num, 'Carta regola senza titolo e senza testo', lines[labelIdx].text); prev = null; return; }
+    // titolo: righe grandi subito dopo l'etichetta (puo' andare a capo)
+    const bodyH = median(rest.slice(1).map((l) => l.h)) || rest[0].h / 2;
+    let n = 1;
+    while (n < rest.length && rest[n].h >= 0.95 * rest[0].h && rest[n].y - rest[n - 1].y <= 1.6 * rest[n - 1].h) n++;
+    const titleLines = rest[0].h >= 1.2 * bodyH || rest.length === 1 ? rest.slice(0, n) : [];
+    let cost = null;
+    const titleItems = titleLines.flatMap((l) => l.items).filter((i) => { if (D.ployCost.test(i.str.trim())) { cost = i.str.trim().replace(/\s+/g, '').toUpperCase(); return false; } return true; });
+    let name = titleItems.length ? joinItems(titleItems) : '';
+    if (!name) warn('rule-name', page.num, 'Carta regola senza titolo riconoscibile', rest[0].text);
+    const body = rest.slice(titleLines.length);
+    // paragrafi: salto di riga maggiore del passo normale; il primo paragrafo piu' grande degli altri = testo narrativo
+    const dys = body.slice(1).map((l, k) => l.y - body[k].y).filter((d) => d > 0).sort((a, b) => a - b);
+    const pitch = dys.length ? dys[Math.floor(0.25 * (dys.length - 1))] : 11;   // 1o quartile: le tabelle allungano la mediana
+    const paras = [];
+    body.forEach((l, k) => { if (!k || l.y - body[k - 1].y > 1.35 * pitch) paras.push([l]); else paras[paras.length - 1].push(l); });
+    let flavor = '';
+    if (paras.length >= 2 && avgH(paras[0]) >= avgH(paras[1]) + 0.3) flavor = joinLines('', paras.shift());
+    const text = paras.reduce((acc, p) => joinLines(acc, p), '');
+    const entry = { name: name.replace(/\s+/g, ' ').trim(), cost, text, flavor, page: page.num };
+    const m = CARD_NO.exec(entry.name);
+    if (m) { entry.card = { k: Number(m[1]), n: Number(m[2]) }; entry.name = entry.name.replace(CARD_NO, '').replace(/\s+/g, ' ').trim(); }
+    if (kind === 'factionRule') out.factionRule.push(entry);
+    else if (kind === 'equipment') out.equipment.push(entry);
+    else out.ploys.push({ ...entry, kind });
+    found++;
+    prev = { entry, continues };
+  });
+  if (!found) out.ignoredPages.push({ page: page.num, heading: snippet(page.items.find((i) => i.h >= 12)?.str || '', 60), reason: 'foglio senza carte regola riconosciute (lista squadra, lore o riepilogo)' });
+  return true;
+}
+
+// Aggiunge righe di testo a un testo gia' scritto (a capo con trattino unito, altrimenti uno spazio).
+function joinLines(base, lines) {
+  let t = base || '';
+  for (const l of lines) {
+    const s = l.text;
+    t = t ? (/-$/.test(t) && /^[a-z]/.test(s) ? t.slice(0, -1) + s : t + ' ' + s) : s;
+  }
+  return t.replace(/\s+/g, ' ').trim();
+}
+
+// Carte "(CARD 1/3)", "(CARD 2/3)"...: stessa regola su piu' carte, unita in ordine.
+function mergeCards(arr) {
+  const groups = new Map();
+  arr.forEach((e, idx) => { if (e.card) { const key = `${e.kind || ''}|${normName(e.name)}`; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(idx); } });
+  const drop = new Set();
+  for (const idxs of groups.values()) {
+    if (idxs.length < 2) continue;
+    const parts = idxs.map((i) => arr[i]).sort((a, b) => a.card.k - b.card.k);
+    const first = arr[idxs[0]];
+    first.text = parts.map((p) => p.text).filter(Boolean).join(' ');
+    first.flavor = parts.map((p) => p.flavor).filter(Boolean).join(' ');
+    first.page = Math.min(...parts.map((p) => p.page));
+    first.cards = parts.map((p) => p.card.k);
+    idxs.slice(1).forEach((i) => drop.add(i));
+  }
+  for (let i = arr.length - 1; i >= 0; i--) if (drop.has(i)) arr.splice(i, 1);
 }
 
 // ---------- raggruppamento armi per il salvataggio ----------

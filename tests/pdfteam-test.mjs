@@ -15,7 +15,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { openPdf, extractPages } from '../js/pdfread.js';
+import { openPdf, extractPages, isBoldName } from '../js/pdfread.js';
 import { parseTeam, matchWeaponGroups, splitRules, splitModeFromName, weaponGroups, displayWeaponName, LANGS } from '../js/pdfteam.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -265,6 +265,35 @@ for (const f of realFiles) {
   eq(o.keywords, ['TESTFACTION', 'OTHER EMPIRE', 'TESTUNIT'], 'parole chiave senza la base');
   ok(o.continues, '"OTHER SIDE" riconosciuto come continua');
   ok(!r.warnings.some((w) => ['orphan-text', 'empty-block'].includes(w.code)), 'nessun avviso di testo non attribuito o blocco vuoto');
+}
+
+// Regressione dal secondo giro sul PDF vero: font "-BdCn", abilita' su due colonne, fogli di carte regola 2x2 con regola in piu' carte.
+{
+  ok(isBoldName('ZZ+TradeGothicNextLTPro-BdCn') && isBoldName('X-Bd') && !isBoldName('X-Cn') && !isBoldName('X-Rg'), 'isBoldName: -BdCn è grassetto');
+  const t = (str, x, y, bold = false, h = 8, w = null) => ({ str, x, y, w: w ?? str.length * 3.5, h, font: bold ? 'F-Bold' : 'F', bold });
+  const head = [t('TESTUNIT', 40, 60, true, 20), t('APL', 40, 80), t('MOVE', 100, 80), t('SAVE', 160, 80), t('WOUNDS', 220, 80),
+    t('2', 42, 94, true, 12), t('6"', 102, 94, true, 12), t('5+', 162, 94, true, 12), t('8', 222, 94, true, 12)];
+  // due colonne: sinistra x=40..140, destra x=170..270, stesse righe
+  const two = [...head,
+    t('Left Thing: first words of the left', 40, 120, false, 8, 100), t('rule text goes on here a bit', 40, 130, false, 8, 100), t('and ends here.', 40, 140, false, 8, 60),
+    t('Right Thing: other words on the right', 170, 120, false, 8, 100), t('side with more text on it now', 170, 130, false, 8, 100), t('and ends there too.', 170, 140, false, 8, 60)];
+  const r2 = parseTeam([{ num: 1, width: 400, height: 600, items: two, images: [] }], { title: 'X' }).operatives[0];
+  eq(r2.abilities.map((a) => a.name), ['Left Thing', 'Right Thing'], 'due colonne: titoli');
+  ok(!/Right/.test(r2.abilities[0].text) && !/Left/.test(r2.abilities[1].text), 'due colonne: testi non mescolati');
+  // foglio 2x2: carta 1/2 a sinistra con "continua", retro senza etichetta a destra, carta 2/2 sotto
+  const img = (x, y) => ({ x, y, w: 217, h: 362 });
+  const cell = (x0, y0, label, name, lines) => [t('TESTUNIT', x0, y0 + 20, true, 12), t(label, x0 + 5, y0 + 40, false, 20), t(name, x0, y0 + 60, false, 14),
+    ...lines.map((l, k) => t(l, x0, y0 + 80 + 11 * k, false, 8.5, 150))];
+  const sheet = { num: 5, width: 595, height: 841, images: [img(90, 60), img(288, 60), img(90, 410), img(288, 410)], items: [
+    ...cell(107, 90, 'FACTION RULE', 'BIG RULE (CARD 1/2)', ['First part of the rule.', 'RULE CONTINUES ON OTHER SIDE']),
+    ...[t('Back side of the first card.', 306, 100, false, 8.5, 120)],
+    ...cell(107, 440, 'FACTION RULE', 'BIG RULE (CARD 2/2)', ['Last part of the rule.']),
+    ...cell(306, 440, 'STRATEGY PLOY', 'SMALL PLOY', ['Flavor text here', 'in two lines.', 'Do the thing now.'].map((x) => x))
+  ] };
+  const r3 = parseTeam([{ num: 1, width: 400, height: 600, items: two, images: [] }, sheet], { title: 'X' });
+  eq(r3.factionRule.map((f) => f.name), ['BIG RULE'], 'foglio: carte 1/2 e 2/2 unite');
+  eq(r3.factionRule[0].text, 'First part of the rule. Back side of the first card. Last part of the rule.', 'foglio: testo unito in ordine, con il retro');
+  eq(r3.ploys.map((p) => `${p.kind}:${p.name}`), ['strategy:SMALL PLOY'], 'foglio: stratagemma in cella separata');
 }
 
 console.log(`\n${checks - fails}/${checks} controlli superati${fails ? `, ${fails} FALLITI` : ''}.`);

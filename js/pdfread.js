@@ -7,7 +7,7 @@
 //   images[] = { x, y, w, h }   rettangoli delle immagini bitmap sulla pagina (x, y = angolo in alto a sinistra)
 // Tutte le coordinate sono in punti PDF alla scala 1, origine in alto a sinistra.
 
-const BOLD_RE = /(bold|black|heavy|semibold|demi|extrabold|ultra|-bd\b|,bd\b|\bbd$)/i;
+const BOLD_RE = /(bold|black|heavy|semibold|demi|extrabold|ultra|-bd(?:cn|c|it)?\b|,bd\b|\bbd$)/i;
 
 export function isBoldName(name) {
   return BOLD_RE.test(String(name || ''));
