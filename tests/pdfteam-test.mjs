@@ -245,5 +245,27 @@ for (const f of realFiles) {
   ok(/within 3" BEACON \) would be incapacitated/.test(ab[0].text), 'inline: la frase resta intera');
 }
 
+// Regressione dal primo PDF vero: titoli NON riconosciuti come grassetto, riga parole chiave con base (28), "OTHER SIDE".
+{
+  const t = (str, x, y, bold = false, h = 8) => ({ str, x, y, w: str.length * 4, h, font: bold ? 'F-Bold' : 'F', bold });
+  const items = [
+    t('TESTUNIT', 40, 60, true, 20), t('APL', 40, 80), t('MOVE', 100, 80), t('SAVE', 160, 80), t('WOUNDS', 220, 80),
+    t('2', 42, 94, true, 12), t('6"', 102, 94, true, 12), t('5+', 162, 94, true, 12), t('8', 222, 94, true, 12),
+    t('Warrior Instincts: Whenever this operative is shooting, if you', 40, 120),
+    t("don't spend points during that sequence.", 40, 132),
+    t('Evasive Drone: AERIAL GUIDANCE', 40, 158), t('1AP', 160, 158),
+    t('This operative cannot perform any actions.', 40, 170),
+    t('RULES CONTINUE ON OTHER SIDE', 40, 184, true),
+    t('TESTFACTION , OTHER EMPIRE, TESTUNIT 28', 40, 198, true)
+  ];
+  const r = parseTeam([{ num: 1, width: 400, height: 600, items, images: [] }], { title: 'X' });
+  const o = r.operatives[0];
+  eq(o.abilities.map((a) => a.name), ['Warrior Instincts'], 'senza grassetto: abilita\'');
+  eq(o.actions.map((a) => `${a.name} ${a.cost}`), ['Evasive Drone: AERIAL GUIDANCE 1AP'], 'senza grassetto: azione con costo');
+  eq(o.keywords, ['TESTFACTION', 'OTHER EMPIRE', 'TESTUNIT'], 'parole chiave senza la base');
+  ok(o.continues, '"OTHER SIDE" riconosciuto come continua');
+  ok(!r.warnings.some((w) => ['orphan-text', 'empty-block'].includes(w.code)), 'nessun avviso di testo non attribuito o blocco vuoto');
+}
+
 console.log(`\n${checks - fails}/${checks} controlli superati${fails ? `, ${fails} FALLITI` : ''}.`);
 process.exit(fails ? 1 : 0);

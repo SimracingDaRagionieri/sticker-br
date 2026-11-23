@@ -20,7 +20,7 @@ export const LANGS = {
   en: {
     stats: { apl: 'APL', move: 'MOVE', save: 'SAVE', wounds: 'WOUNDS' },
     cols: { name: 'NAME', atk: 'ATK', hit: 'HIT', dmg: 'DMG', wr: 'WR' },
-    continues: /RULES\s+CONTINUE\s+ON\s+BACK/i,
+    continues: /RULES\s+CONTINUE(?:D)?\s+ON\s+(?:THE\s+)?(?:BACK|OTHER\s+SIDE|REVERSE)/i,
     actionCost: /^(\d+)\s*AP$/i,
     ployCost: /^(\d+)\s*CP$/i,
     pages: {
@@ -343,6 +343,8 @@ function readTable(lines, h, region, ctx) {
 // ---------- blocchi di testo (abilita', azioni, stratagemmi, equipaggiamento) ----------
 
 // Fine frase: punteggiatura finale, anche chiusa da virgolette/parentesi. Un `"` dopo una cifra e' un pollice (3"), non una fine frase.
+// "Warrior Instincts: ..." = al massimo 5 parole che iniziano per maiuscola (o articoli minuscoli), poi due punti.
+const TITLE_COLON = /^((?:[A-Z][\w'’-]*)(?:\s+(?:[A-Z][\w'’-]*|of|the|and|to|a|in|on|for)){0,4}):(?:\s+|$)/;
 const SENTENCE_END = /[.!?:;]$|[.!?]["”)]$/;
 
 // lines = righe gia' filtrate; opts.cost(item) -> costo se l'elemento e' un costo. Restituisce { blocks, orphans, continues }.
@@ -360,7 +362,14 @@ function readBlocks(lines, D, { costRe, pageNum, onContinue }) {
       const ci = items.find((it) => costRe.test(it.str.trim()));
       if (ci) { cost = ci.str.trim().replace(/\s+/g, '').toUpperCase(); items = items.filter((it) => it !== ci); }
     }
-    const bs = boldStart(items);
+    let bs = boldStart(items);
+    // Titoli non in grassetto (font non riconosciuto): riga con costo = azione; "Titolo Maiuscolo: testo" a inizio frase = abilita'.
+    if (!bs && (!cur || !cur.text || SENTENCE_END.test(cur.text.trim()))) {
+      const full = joinItems(items);
+      const m = TITLE_COLON.exec(full);
+      if (cost != null && full) bs = { title: full, rest: '' };
+      else if (m) bs = { title: m[1], rest: full.slice(m[0].length).trim() };
+    }
     // Una parola chiave in grassetto a inizio riga seguita da ")" "," "." (es. "BEACON) would...") e' dentro una frase, non un titolo.
     const inlineKeyword = bs && cost == null && cur && /^[),.;\]]/.test(bs.rest.trim());
     const startsBlock = bs && !inlineKeyword && (cost != null || !cur || !cur.text || SENTENCE_END.test(cur.text.trim()));
@@ -378,7 +387,9 @@ function readBlocks(lines, D, { costRe, pageNum, onContinue }) {
   return { blocks, orphans };
 }
 
-const isKeywordLine = (t) => t.includes(',') && t === t.toUpperCase() && /[A-Z]/.test(t) && !/\d{2,}/.test(t) && t.length < 200;
+// Riga tutta maiuscola con virgole; in coda puo' esserci la dimensione della base (es. "... SWARMGUARD 28" o "40mm").
+const stripBase = (t) => t.replace(/\s+\d{2,3}\s?(?:mm)?$/i, '');
+const isKeywordLine = (t) => { const k = stripBase(t); return k.includes(',') && k === k.toUpperCase() && /[A-Z]/.test(k) && !/\d/.test(k) && k.length < 200; };
 
 // ---------- parser ----------
 
@@ -602,7 +613,7 @@ function readCardPage(page, anchors, D, cards, warn) {
 
     // parole chiave: riga tutta maiuscola con virgole
     const kwLines = rest.filter((l) => isKeywordLine(l.text));
-    for (const l of kwLines) card.keywords.push(...l.text.split(',').map((s) => s.trim()).filter(Boolean));
+    for (const l of kwLines) card.keywords.push(...stripBase(l.text).split(',').map((s) => s.trim()).filter(Boolean));
     const body = rest.filter((l) => !kwLines.includes(l));
 
     const { blocks, orphans } = readBlocks(body, D, { costRe: D.actionCost, pageNum: page.num, onContinue: () => { card.continues = true; } });
@@ -637,6 +648,9 @@ function readRulesPage(page, D, out, warn) {
     const text = orphans.map((o) => o.text).join(' ');
     entries.unshift({ name: snippet(heading, 60), cost: null, text, page: page.num });
   }
+  // intestazione di colonna ripetuta ("A B A B", tutta maiuscola, senza testo ne' costo): non e' una voce
+  const repeated = (n) => { const w = String(n).trim().split(/\s+/); const h = w.length / 2; return w.length >= 2 && w.length % 2 === 0 && w.slice(0, h).join(' ') === w.slice(h).join(' ') && n === n.toUpperCase(); };
+  for (let k = entries.length - 1; k >= 0; k--) if (!entries[k].text && !entries[k].cost && repeated(entries[k].name)) entries.splice(k, 1);
   for (const e of entries) if (!e.text) warn('empty-rule', page.num, `Voce "${e.name}" senza testo`, e.name);
   if (!entries.length) warn('rules-empty', page.num, `Pagina "${snippet(heading, 40)}" riconosciuta ma senza voci`, heading);
   for (const e of entries) {
