@@ -57,9 +57,9 @@ const SEED_TEMPLATES = [
     key: 'activation', name: 'Attivazione', kind: 'activation',
     config: {
       width: 1080, padding: 24, trim: true,
-      plate: { show: true, color: '#111111', opacity: 0.85, radius: 20, padding: 28, border: { width: 4, color: '#E8B04A' } },
+      plate: { show: false, color: '#111111', opacity: 0.85, radius: 20, padding: 28, border: { width: 4, color: '#E8B04A' } },
       image: { show: true, side: 'left', height: 220, radius: 12, border: { width: 3, color: '#FFFFFF' } },
-      weaponImage: { show: false, position: 'below', maxHeight: 200 },
+      weaponImage: { show: true, position: 'below', maxHeight: 240, replaceText: true, radius: 10 },
       lines: [
         { source: 'unit', font: 'Bebas Neue', size: 96, minSize: 56, color: '#FFFFFF', stroke: { width: 6, color: '#000000' }, shadow: true, upper: true, align: 'left' },
         { source: 'weapon', font: 'Oswald', weight: 500, size: 60, minSize: 36, color: '#E8B04A', stroke: { width: 4, color: '#000000' }, shadow: false, upper: false, align: 'left' }
@@ -72,7 +72,7 @@ const SEED_TEMPLATES = [
       width: 1080, padding: 24, trim: true,
       plate: { show: false, color: '#111111', opacity: 0.85, radius: 20, padding: 28 },
       image: { show: false, side: 'left', height: 220, radius: 12, border: { width: 3, color: '#FFFFFF' } },
-      weaponImage: { show: false, position: 'below', maxHeight: 200 },
+      weaponImage: { show: false, position: 'below', maxHeight: 240, replaceText: true, radius: 10 },
       lines: [
         { source: 'unit', font: 'Bebas Neue', size: 96, minSize: 56, color: '#FFFFFF', stroke: { width: 6, color: '#000000' }, shadow: true, upper: true, align: 'left' },
         { source: 'weapon', font: 'Oswald', weight: 500, size: 60, minSize: 36, color: '#E8B04A', stroke: { width: 4, color: '#000000' }, shadow: true, upper: false, align: 'left' }
@@ -125,15 +125,28 @@ async function init() {
 // Una sola volta (settings.seededTemplates), anche per chi aveva gia' i giochi del Passo 2.
 async function seedTemplates() {
   await db.transaction('rw', db.templates, db.settings, async () => {
-    if (await db.settings.get('seededTemplates')) return;
-    const defaults = {};
-    for (const t of SEED_TEMPLATES) {
-      const id = await db.templates.add({ name: t.name, kind: t.kind, config: structuredClone(t.config) });
-      if (!(t.kind in defaults)) defaults[t.kind] = id;
+    if (!(await db.settings.get('seededTemplates'))) {
+      const defaults = {};
+      for (const t of SEED_TEMPLATES) {
+        const id = await db.templates.add({ name: t.name, kind: t.kind, config: structuredClone(t.config) });
+        if (!(t.kind in defaults)) defaults[t.kind] = id;
+      }
+      const prev = await db.settings.get('defaultTemplates');
+      await db.settings.put({ key: 'defaultTemplates', value: { ...defaults, ...(prev ? prev.value : {}) } });
+      await db.settings.put({ key: 'seededTemplates', value: 1 });
+      await db.settings.put({ key: 'templatesRev', value: 2 });
+      return;
     }
-    const prev = await db.settings.get('defaultTemplates');
-    await db.settings.put({ key: 'defaultTemplates', value: { ...defaults, ...(prev ? prev.value : {}) } });
-    await db.settings.put({ key: 'seededTemplates', value: 1 });
+    // Revisione 2 (Passo 4, dopo la prova): targa spenta in "Attivazione" e profilo arma al posto del nome.
+    // Gli editor dei template arrivano al Passo 7, quindi i predefiniti non sono ancora modificabili dall'utente.
+    const rev = await db.settings.get('templatesRev');
+    if (!rev || rev.value < 2) {
+      for (const t of SEED_TEMPLATES) {
+        const row = await db.templates.where('kind').equals(t.kind).filter((r) => r.name === t.name).first();
+        if (row) await db.templates.update(row.id, { config: structuredClone(t.config) });
+      }
+      await db.settings.put({ key: 'templatesRev', value: 2 });
+    }
   });
 }
 

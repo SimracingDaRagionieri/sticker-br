@@ -13,6 +13,7 @@
 //   trim      se true taglia i bordi trasparenti, poi riaggiunge `padding`.
 //   plate.padding  spazio tra targa e contenuto (facoltativo, predefinito 28).
 //   plate.border   se assente (undefined/null) e i dati hanno accentColor, il bordo usa quel colore.
+//   weaponImage.replaceText  se true e l'immagine arma e' mostrata, la riga di testo dell'arma non viene scritta.
 //   lines[].weight peso del font (facoltativo, predefinito 400).
 
 const TRUNC = '...';
@@ -75,6 +76,7 @@ export function normalizeConfig(c = {}) {
       show: bool(wi.show, false),
       position: wi.position === 'right' ? 'right' : 'below',
       maxHeight: Math.max(16, num(wi.maxHeight, 200)),
+      replaceText: bool(wi.replaceText, false),
       radius: Math.max(0, num(wi.radius, 12)),
       border: normBorder(wi.border)
     },
@@ -252,14 +254,17 @@ function trimCanvas(src, margin) {
 
 export async function renderSticker(data = {}, config = {}) {
   const cfg = normalizeConfig(config);
+  const useUnitImg = cfg.image.show && data.unitImage;
+  const useWeaponImg = cfg.weaponImage.show && data.weaponImage;
+  // Con weaponImage.replaceText l'immagine del profilo arma prende il posto del nome arma scritto.
+  const dropWeaponText = useWeaponImg && cfg.weaponImage.replaceText;
   const items = cfg.lines
+    .filter((l) => !(dropWeaponText && l.source === 'weapon'))
     .map((l) => ({ l, v: lineValue(l, data) }))
     .filter((x) => x.v);
 
   await ensureFonts(items.map((x) => x.l), items.map((x) => x.v));
 
-  const useUnitImg = cfg.image.show && data.unitImage;
-  const useWeaponImg = cfg.weaponImage.show && data.weaponImage;
   const [unitBmp, weaponBmp] = await Promise.all([
     useUnitImg ? toBitmap(data.unitImage) : null,
     useWeaponImg ? toBitmap(data.weaponImage) : null
