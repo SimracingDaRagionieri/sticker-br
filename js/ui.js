@@ -60,6 +60,17 @@ export function confirmSheet({ title, lines = [], confirmLabel = 'Conferma', dan
   });
 }
 
+// Avviso con un solo pulsante (errori). lines: righe di testo (escapate). Promise risolta alla chiusura.
+export function noticeSheet({ title, lines = [], okLabel = 'OK' }) {
+  return new Promise((resolve) => {
+    const sheet = openSheet(`
+      <h3 class="sheet-title">${esc(title)}</h3>
+      ${lines.map((l) => `<p class="sheet-text">${esc(l)}</p>`).join('')}
+      <div class="row"><button type="button" class="primary" data-ok>${esc(okLabel)}</button></div>`, { onClose: () => resolve() });
+    sheet.querySelector('[data-ok]').addEventListener('click', closeSheet);
+  });
+}
+
 // fields: [{ name, label, type: 'text'|'select'|'checks', value, options: [{value,label,checked}], required }]
 // Restituisce una Promise con { nome: valore } oppure null se annullato.
 // Per 'checks' il valore e' un array di stringhe.

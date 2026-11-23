@@ -12,6 +12,7 @@ import { renderStickerFor, stickerNameParts, isPngAction } from '../stickerinput
 import { saveBlob, stickerFilename } from '../export.js';
 import { toast, parseHash, canGoBack } from '../app.js';
 import { esc, openSheet, closeSheet } from '../ui.js';
+import * as B from '../backup.js';
 
 const live = createLiveIndex(D.db);
 
@@ -21,7 +22,7 @@ const MOVE_TOLERANCE = 10;
 const THUMB_CACHE_MAX = 80;
 
 // Stato che sopravvive al cambio di schermata (il modulo resta caricato).
-const ui = { q: '', tab: 'recenti', gameId: null, loaded: false, scroll: 0, restore: false };
+const ui = { q: '', tab: 'recenti', gameId: null, loaded: false, scroll: 0, restore: false, backupHidden: false };
 
 let token = 0;
 let cur = null; // risorse della schermata aperta: { observer, urls, alive }
@@ -476,6 +477,7 @@ export async function render(el) {
         ${games.map((g) => `<button type="button" class="chip" data-game="${g.id}" aria-pressed="${ui.gameId === g.id}">${esc(g.name)}</button>`).join('')}
       </div>
     </div>
+    <div id="bk-warn" class="bk-warn" hidden></div>
     <div id="crea-body"></div>`;
   const input = el.querySelector('#crea-q');
   const body = el.querySelector('#crea-body');
@@ -540,7 +542,23 @@ export async function render(el) {
     renderBody();
   }));
 
+  showBackupWarning(el, res);
   await renderBody();
+}
+
+// Avviso discreto (Passo 12): ultimo backup oltre 14 giorni e modifiche successive (o nessun backup mai fatto).
+// "Nascondi" vale fino alla chiusura dell'app. Non blocca ne' ritarda il disegno della schermata.
+function showBackupWarning(el, res) {
+  if (ui.backupHidden) return;
+  B.backupStatus().then((st) => {
+    const box = el.querySelector('#bk-warn');
+    if (!st.warning || !box || !res.alive()) return;
+    box.innerHTML = `<span class="bk-warn-text">${esc(B.warningText(st.warning))}</span>
+      <a class="bk-warn-go" href="#/altro" data-bk-go>Fai il backup</a>
+      <button type="button" class="bk-warn-x" data-bk-hide aria-label="Nascondi l'avviso">✕</button>`;
+    box.hidden = false;
+    box.querySelector('[data-bk-hide]').addEventListener('click', () => { ui.backupHidden = true; box.hidden = true; });
+  }).catch((err) => console.warn('Stato del backup non letto', err));
 }
 
 // Chiamata dal router quando si lascia la schermata: libera gli osservatori e ricorda la posizione.

@@ -76,6 +76,59 @@ db.version(4).stores({
   queue: '++id, &key'
 });
 
+// ---------- segnatore di modifica (Passo 12) ----------
+// Serve all'avviso di backup in Crea: `settings.lastChangeAt` = istante dell'ultima scrittura SUCCESSIVA a una modifica dei
+// dati che il backup contiene (tutte le tabelle tranne `settings` e `recents`). Gli aggiornamenti che toccano solo
+// `lastUsed`/`useCount` (uso di uno sticker) non contano. `settings.firstChangeAt` = prima modifica registrata (serve
+// quando non c'e' ancora nessun backup). Si scrive a transazione conclusa, mai dentro l'hook; durante l'avvio (semi dei
+// dati iniziali) e durante un ripristino il segnatore e' spento (`withoutChangeTracking`).
+export const CHANGE_TABLES = ['games', 'factions', 'units', 'weapons', 'actions', 'images', 'cards', 'templates', 'fonts',
+  'rules', 'matches', 'matchUnits', 'matchEvents', 'queue'];
+const USE_ONLY_FIELDS = new Set(['lastUsed', 'useCount']);
+let trackOff = 0;
+function sameValue(a, b) {
+  if (a === b) return true;
+  if (typeof Blob !== 'undefined' && (a instanceof Blob || b instanceof Blob)) return false;
+  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return false;
+  try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
+}
+let changeWrites = Promise.resolve();
+
+function persistChange(t) {
+  changeWrites = changeWrites.then(() => db.transaction('rw', db.settings, async () => {
+    const last = await db.settings.get('lastChangeAt');
+    if (!last || last.value < t) await db.settings.put({ key: 'lastChangeAt', value: t });
+    if (!(await db.settings.get('firstChangeAt'))) await db.settings.put({ key: 'firstChangeAt', value: t });
+  })).catch((err) => console.warn('lastChangeAt non salvato', err));
+}
+
+{
+  const noted = new WeakSet();
+  const note = (trans) => {
+    if (trackOff > 0 || !trans || !trans.on || noted.has(trans)) return;
+    noted.add(trans);
+    trans.on('complete', () => persistChange(Date.now()));
+  };
+  for (const name of CHANGE_TABLES) {
+    const t = db[name];
+    t.hook('creating', (primKey, obj, trans) => { note(trans); });
+    t.hook('deleting', (primKey, obj, trans) => { note(trans); });
+    t.hook('updating', (mods, primKey, obj, trans) => {
+      // Dexie riscrive da solo i campi con indice multi-valore (weapons.unitIds) con lo stesso valore: non e' una modifica.
+      if (Object.keys(mods).some((k) => !USE_ONLY_FIELDS.has(k.split('.')[0]) && !(!k.includes('.') && sameValue(mods[k], obj[k])))) note(trans);
+    });
+  }
+}
+
+// Esegue fn con il segnatore spento (le transazioni avviate dentro fn non contano come modifiche).
+export async function withoutChangeTracking(fn) {
+  trackOff++;
+  try { return await fn(); } finally { trackOff--; }
+}
+
+// Attende che le scritture di lastChangeAt gia' avviate siano finite (usato prima di leggerlo).
+export const changeSettled = () => changeWrites;
+
 // ---------- utilita' ----------
 
 const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
@@ -158,6 +211,11 @@ export function ready() {
 }
 
 async function init() {
+  trackOff++; // i semi dei dati iniziali non sono modifiche dell'utente
+  try { await initInner(); } finally { trackOff--; }
+}
+
+async function initInner() {
   await db.open();
   let first = false;
   await db.transaction('rw', db.games, db.settings, async () => {

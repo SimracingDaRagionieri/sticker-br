@@ -1,7 +1,8 @@
 import { saveBlob, shareBlobs, timestamp } from '../export.js';
 import { toast } from '../app.js';
 import * as D from '../db.js';
-import { confirmSheet } from '../ui.js';
+import { confirmSheet, noticeSheet } from '../ui.js';
+import * as B from '../backup.js';
 import { generateTestData, deleteTestData, testDataStats } from '../testdata.js';
 import { queueButtonHTML, bindQueueButton, queueActionsHTML, bindQueueActions } from './coda.js';
 
@@ -40,6 +41,18 @@ function makeBlob() {
 export function render(el) {
   el.innerHTML = `
     <div class="title-row"><h1>Altro</h1>${queueButtonHTML()}</div>
+    <h2>Backup</h2>
+    <p class="meta" id="bk-info">Controllo…</p>
+    <div class="row">
+      <button id="bk-save" class="primary" type="button">Salva backup</button>
+      <button id="bk-share" type="button">Condividi backup</button>
+    </div>
+    <div class="row">
+      <button id="bk-restore" class="danger" type="button">Ripristina da un backup…</button>
+    </div>
+    <input id="bk-file" type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden>
+    <p class="meta" id="bk-msg" role="status"></p>
+    <p class="meta">Il file BR_backup_AAAAMMGG.zip contiene tutti i dati (giochi, squadre, miniature, armi, azioni, template, font, regole, partite e coda) con le immagini. Le carte importate non si salvano. Ripristinare SOSTITUISCE tutti i dati attuali, dopo aver scaricato un backup di quelli di adesso. Il backup serve se si svuotano i dati del sito o si cambia telefono.</p>
     <h2>Coda sticker</h2>
     <p class="meta" id="q-info">Controllo…</p>
     ${queueActionsHTML()}
@@ -66,6 +79,7 @@ export function render(el) {
 
   bindQueueButton(el);
   bindQueueActions(el);
+  bindBackup(el);
   const qinfo = el.querySelector('#q-info');
   const updQ = async () => {
     if (!el.isConnected) { window.removeEventListener('sbr-queue', updQ); return; }
@@ -122,5 +136,78 @@ export function render(el) {
     const blob = await makeBlob();
     const r = await shareBlobs([blob], [`BR_test_${timestamp()}.png`]);
     if (r === 'saved') toast('Condivisione non disponibile: salvato in Download');
+  });
+}
+
+// ---------- backup e ripristino (Passo 12) ----------
+
+function bindBackup(el) {
+  const info = el.querySelector('#bk-info');
+  const msg = el.querySelector('#bk-msg');
+  const btnSave = el.querySelector('#bk-save');
+  const btnShare = el.querySelector('#bk-share');
+  const btnRestore = el.querySelector('#bk-restore');
+  const btns = [btnSave, btnShare, btnRestore];
+  const file = el.querySelector('#bk-file');
+  const busy = (on, text = '') => { btns.forEach((b) => { b.disabled = on; }); msg.textContent = text; };
+
+  async function refresh() {
+    try {
+      const st = await B.backupStatus();
+      const pending = st.lastChangeAt != null && (st.lastBackupAt == null || st.lastChangeAt > st.lastBackupAt);
+      info.textContent = `Ultimo backup: ${B.agoText(st.lastBackupAt)}.` + (pending ? ' Ci sono modifiche successive.' : '');
+    } catch (err) { info.textContent = 'Database non disponibile.'; }
+  }
+  refresh();
+
+  async function run(fn, doneText) {
+    busy(true, 'Preparo il backup…');
+    try {
+      toast(doneText(await fn()));
+    } catch (err) {
+      console.error(err);
+      await noticeSheet({ title: 'Backup non riuscito', lines: [err.message || String(err)] });
+    }
+    busy(false);
+    refresh();
+  }
+  btnSave.addEventListener('click', () => run(() => B.saveBackup(), (r) => `Salvato ${r.filename} in Download`));
+  btnShare.addEventListener('click', () => run(() => B.shareBackup(), (r) => (r.how === 'shared' ? 'Backup condiviso'
+    : r.how === 'saved' ? `Condivisione non disponibile: salvato ${r.filename}` : 'Condivisione annullata')));
+
+  btnRestore.addEventListener('click', () => { file.value = ''; file.click(); });
+  file.addEventListener('change', async () => {
+    const f = file.files && file.files[0];
+    file.value = ''; // si puo' scegliere di nuovo lo stesso file (il File gia' letto resta valido)
+    if (!f) return;
+    busy(true, 'Controllo il file…');
+    let parsed;
+    try {
+      parsed = await B.readBackup(f);
+    } catch (err) {
+      busy(false);
+      await noticeSheet({ title: 'File non valido', lines: [err.message || String(err), 'Non è stato toccato nessun dato.'] });
+      return;
+    }
+    busy(false);
+    const day = B.agoText(Date.parse(parsed.manifest.exportedAt)).replace(/ \(.*\)$/, '');
+    const lines = [
+      `Backup del ${day}: ${B.summaryLines(parsed.counts).join(', ')}.`,
+      'Sostituisce tutti i dati attuali. Prima scarico in automatico un backup dei dati di adesso.'
+    ];
+    if (parsed.warnings.length) lines.push('Attenzione: ' + parsed.warnings.join('; ') + '.');
+    const ok = await confirmSheet({ title: 'Ripristinare questo backup?', lines, confirmLabel: 'Sostituisci tutto', danger: true });
+    if (!ok) return;
+    busy(true, 'Ripristino…');
+    try {
+      await B.restoreBackup(parsed, { onStep: (s) => { msg.textContent = s === 'auto' ? 'Salvo i dati attuali…' : 'Ripristino…'; } });
+      toast('Ripristinato: riapro l\'app…');
+      // Ricarica la pagina: indice di ricerca, font importati e cache dei template ripartono dai dati ripristinati.
+      setTimeout(() => { location.hash = '#/crea'; location.reload(); }, 600);
+    } catch (err) {
+      busy(false);
+      await noticeSheet({ title: 'Ripristino non riuscito', lines: [err.message || String(err)] });
+      refresh();
+    }
   });
 }
