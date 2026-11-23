@@ -5,6 +5,18 @@ export function timestamp(d = new Date()) {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
+// Pezzo di nome file sicuro: senza accenti, spazi in trattini, solo lettere/cifre/trattini, max 40 caratteri.
+function slug(s) {
+  return String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, '-').replace(/[^A-Za-z0-9_-]/g, '').replace(/-{2,}/g, '-').replace(/^[-_]+|[-_]+$/g, '').slice(0, 40);
+}
+
+// BR_<miniatura>_<arma>_<AAAAMMGG-HHMMSS>.png (le parti vuote vengono saltate).
+export function stickerFilename(parts, d = new Date()) {
+  const body = parts.map(slug).filter(Boolean);
+  return ['BR', ...(body.length ? body : ['sticker']), timestamp(d)].join('_') + '.png';
+}
+
 export function saveBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

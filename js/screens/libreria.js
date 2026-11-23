@@ -250,6 +250,9 @@ async function gameScreen(ctx) {
     onMenu(root, 'action', actions, (a) => entityMenu(a, {
       ctx, table: 'actions',
       extra: [{
+        label: 'Anteprima sticker',
+        run: () => { location.hash = `#/anteprima?action=${a.id}`; }
+      }, {
         label: 'Colore accento',
         run: async () => {
           const v = await formSheet({ title: `Colore: ${a.name}`, fields: [colorField(a.accentColor)] });
@@ -344,9 +347,12 @@ async function unitScreen(ctx) {
     </div>
     ${imgHTML}
     <h2>${esc(L.weapon)} (${weapons.length})</h2>
-    ${listHTML('weapon', weapons, { thumb: wThumb, meta: (w) => KIND_LABEL[w.kind] || '', empty: `Nessuna ${lc(L.weapon)} collegata.` })}
+    ${listHTML('weapon', weapons, { href: (w) => `#/anteprima?unit=${unit.id}&weapon=${w.id}`, thumb: wThumb, meta: (w) => KIND_LABEL[w.kind] || '', empty: `Nessuna ${lc(L.weapon)} collegata.` })}
     <div class="row">
-      <button type="button" class="primary" data-add-weapon>Aggiungi ${esc(lc(L.weapon))}</button>
+      <button type="button" class="primary" data-preview-unit>Sticker solo ${esc(lc(L.unit))}</button>
+    </div>
+    <div class="row">
+      <button type="button" data-add-weapon>Aggiungi ${esc(lc(L.weapon))}</button>
       <button type="button" data-link-weapon>Collega ${esc(lc(L.weapon))} della fazione</button>
     </div>`;
 
@@ -356,6 +362,7 @@ async function unitScreen(ctx) {
     if (imp) imp.addEventListener('click', () => imageFlow(ctx, 'unit', unit, 'pick'));
     const imgMenu = root.querySelector('[data-img-menu]');
     if (imgMenu) imgMenu.addEventListener('click', () => imageMenu(ctx, 'unit', unit, `Immagine di ${unit.name}`));
+    root.querySelector('[data-preview-unit]').addEventListener('click', () => { location.hash = `#/anteprima?unit=${unit.id}`; });
     root.querySelector('[data-add-weapon]').addEventListener('click', () => addWeaponForm(ctx, unit, L));
     root.querySelector('[data-link-weapon]').addEventListener('click', async () => {
       const all = await D.listWeaponsOfFaction(faction.id);

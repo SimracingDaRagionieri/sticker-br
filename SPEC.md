@@ -4,10 +4,16 @@ Specifica e piano di sviluppo (documento del 22/11/2026). I prompt dei singoli p
 
 ## Stato di avanzamento (aggiornato al 23/11/2026)
 
-- Passi 1, 2 e 3 completati.
+- Passi 1, 2, 3 e 4 completati. CACHE_VERSION 'v5'.
 - Passo 3 realizzato in forma semplificata: il ritaglio avviene direttamente sull'immagine di miniatura/arma (js/crop.js), senza tabella `cards` né schermata `#/ritaglio`. Da riprendere prima del Passo 8 (backup con "Includi carte originali").
 - Anticipo parziale del Passo 6: in Libreria, dentro ogni gioco, sezione Azioni con aggiungi, rinomina, preferito, elimina e `accentColor` facoltativo (righe `actions` = `{ gameId, name, accentColor, fav, lastUsed }`).
-- Prossimo: Passo 4 (motore sticker e Anteprima). Restano da fare del Passo 6: campi `label`, `mode`, `imageId`, `templateId`, "Importa PNG", "Valida per tutti i giochi", azioni predefinite di Kill Team.
+- Passo 4: js/render.js (`renderSticker(data, config)`, `normalizeConfig`), font in /fonts (woff2 Latin/Latin-ext, licenze OFL-*.txt), template predefiniti "Attivazione", "Solo testo" (activation) e "Azione" (action) creati una volta sola (`settings.seededTemplates`, `settings.defaultTemplates` = {activation: id, action: id}), schermata `js/screens/anteprima.js`.
+- Router: `parseHash()` e `canGoBack()` esportati da app.js; `#/anteprima?unit=&weapon=&action=&template=` non ha voce nella barra (resta attiva quella di provenienza). Il cambio template usa `history.replaceState`, quindi "indietro" torna alla provenienza.
+- db.js: nuovi `listTemplates(kind)`, `getTemplate`, `getDefaultTemplate(kind)`, `getStickerSource({unitId,weaponId,actionId})` (righe + Blob immagini), `recordUse({unitId,weaponId,actionId,templateId})` (lastUsed, useCount, `recents` con chiave tipo `u12-w40-t1`, max 30). export.js: `stickerFilename(parti)`.
+- Convenzioni del motore: `padding` = margine trasparente mantenuto dopo il taglio; con targa lo sticker è largo esattamente `width` (1080), senza targa ("Solo testo") è tagliato sul testo e quindi più stretto; `plate.padding` (predefinito 28) = spazio targa-contenuto; `lines[].weight` facoltativo; `stroke.width` = spessore visibile del contorno; se il template non ha `plate.border` e i dati hanno `accentColor`, questo diventa il bordo della targa.
+- Provvisorio in Libreria: tocco su un'arma nella scheda miniatura e pulsante "Sticker solo <miniatura>" aprono l'Anteprima; menu ⋮ di un'azione: "Anteprima sticker".
+- Attenzione per il Passo 5: eliminando giochi/miniature/armi/azioni le righe `recents` non vengono ripulite; ignorare i recenti con riferimenti mancanti.
+- Prossimo: Passo 5 (schermata Crea). Restano da fare del Passo 6: campi `label`, `mode`, `imageId`, `templateId`, "Importa PNG", "Valida per tutti i giochi", azioni predefinite di Kill Team.
 - Attenzione: IndexedDB non indicizza `null`; le azioni con `gameId: null` non compaiono in `listActions(gameId)`. Gestire l'unione con le azioni globali oppure usare `db.version(2)`.
 
 ## Sintesi e decisioni
@@ -198,7 +204,7 @@ Verifica: installabile; offline funziona; "Salva PNG di prova" in Download e nel
 
 Piano originale: Cropper.js 1.6.x; "Importa carta" da fazione e scheda miniatura con coda; riduzione a 2400 px, JPEG 0.9 in cards; schermata #/ritaglio/:cardId a tutto schermo con selettore Miniatura | Arma | Icona azione, rotazione ±15°, ruota 90°, Ritaglia (lato lungo max 1200 px, PNG in images con kind, cardId, crop); pannello Assegna; "Ritaglia di nuovo" dalla carta di origine.
 
-### Passo 4 – Motore sticker e Anteprima
+### Passo 4 – Motore sticker e Anteprima (FATTO)
 
 - js/render.js: renderSticker(data, config) → Promise<Blob>. data = {unitName, weaponName, actionName, factionName, unitImage, weaponImage}. Canvas fuori dal DOM alla larghezza config.width in pixel reali; await document.fonts.load per ogni font; strokeText sotto e fillText sopra, lineJoin round, ombra e maiuscolo facoltativi; se il testo non entra riduci fino a minSize, poi tronca con "..."; targa con colore, opacità e bordo; immagini con raggio e bordo; se trim è true taglia i bordi trasparenti lasciando padding; toBlob('image/png').
 - fonts/: Bebas Neue, Oswald, Roboto Condensed in woff2 (OFL) con @font-face in app.css.

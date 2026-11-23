@@ -50,6 +50,49 @@ const SEED_GAMES = [
   { name: 'The Old World', labels: { faction: 'Esercito', unit: 'Unità', weapon: 'Arma' } }
 ];
 
+// Template predefiniti (tabella templates). Config come in SPEC.md sezione 2.
+// "Azione" non definisce plate.border: se l'azione ha un colore accento, diventa il bordo della targa.
+const SEED_TEMPLATES = [
+  {
+    key: 'activation', name: 'Attivazione', kind: 'activation',
+    config: {
+      width: 1080, padding: 24, trim: true,
+      plate: { show: true, color: '#111111', opacity: 0.85, radius: 20, padding: 28, border: { width: 4, color: '#E8B04A' } },
+      image: { show: true, side: 'left', height: 220, radius: 12, border: { width: 3, color: '#FFFFFF' } },
+      weaponImage: { show: false, position: 'below', maxHeight: 200 },
+      lines: [
+        { source: 'unit', font: 'Bebas Neue', size: 96, minSize: 56, color: '#FFFFFF', stroke: { width: 6, color: '#000000' }, shadow: true, upper: true, align: 'left' },
+        { source: 'weapon', font: 'Oswald', weight: 500, size: 60, minSize: 36, color: '#E8B04A', stroke: { width: 4, color: '#000000' }, shadow: false, upper: false, align: 'left' }
+      ]
+    }
+  },
+  {
+    key: 'textonly', name: 'Solo testo', kind: 'activation',
+    config: {
+      width: 1080, padding: 24, trim: true,
+      plate: { show: false, color: '#111111', opacity: 0.85, radius: 20, padding: 28 },
+      image: { show: false, side: 'left', height: 220, radius: 12, border: { width: 3, color: '#FFFFFF' } },
+      weaponImage: { show: false, position: 'below', maxHeight: 200 },
+      lines: [
+        { source: 'unit', font: 'Bebas Neue', size: 96, minSize: 56, color: '#FFFFFF', stroke: { width: 6, color: '#000000' }, shadow: true, upper: true, align: 'left' },
+        { source: 'weapon', font: 'Oswald', weight: 500, size: 60, minSize: 36, color: '#E8B04A', stroke: { width: 4, color: '#000000' }, shadow: true, upper: false, align: 'left' }
+      ]
+    }
+  },
+  {
+    key: 'action', name: 'Azione', kind: 'action',
+    config: {
+      width: 1080, padding: 24, trim: true,
+      plate: { show: true, color: '#111111', opacity: 0.85, radius: 20, padding: 28 },
+      image: { show: false, side: 'left', height: 140, radius: 12 },
+      weaponImage: { show: false, position: 'below', maxHeight: 200 },
+      lines: [
+        { source: 'action', font: 'Bebas Neue', size: 120, minSize: 60, color: '#FFFFFF', stroke: { width: 6, color: '#000000' }, shadow: true, upper: true, align: 'center' }
+      ]
+    }
+  }
+];
+
 let readyPromise = null;
 
 // Apre il database, crea i dati iniziali (una sola volta) e chiede l'archiviazione persistente.
@@ -69,6 +112,7 @@ async function init() {
     }
     await db.settings.put({ key: 'seeded', value: 1 });
   });
+  await seedTemplates();
   if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
     try {
       if (first || !(await navigator.storage.persisted())) await navigator.storage.persist();
@@ -76,6 +120,21 @@ async function init() {
       console.warn('storage.persist non riuscito', err);
     }
   }
+}
+
+// Una sola volta (settings.seededTemplates), anche per chi aveva gia' i giochi del Passo 2.
+async function seedTemplates() {
+  await db.transaction('rw', db.templates, db.settings, async () => {
+    if (await db.settings.get('seededTemplates')) return;
+    const defaults = {};
+    for (const t of SEED_TEMPLATES) {
+      const id = await db.templates.add({ name: t.name, kind: t.kind, config: structuredClone(t.config) });
+      if (!(t.kind in defaults)) defaults[t.kind] = id;
+    }
+    const prev = await db.settings.get('defaultTemplates');
+    await db.settings.put({ key: 'defaultTemplates', value: { ...defaults, ...(prev ? prev.value : {}) } });
+    await db.settings.put({ key: 'seededTemplates', value: 1 });
+  });
 }
 
 // ---------- lettura ----------
@@ -90,6 +149,72 @@ export async function listFactions(gameId) { return (await db.factions.where('ga
 export async function listUnits(factionId) { return (await db.units.where('factionId').equals(factionId).toArray()).sort(byName); }
 export async function listWeaponsOfFaction(factionId) { return (await db.weapons.where('factionId').equals(factionId).toArray()).sort(byName); }
 export async function listWeaponsOfUnit(unitId) { return (await db.weapons.where('unitIds').equals(unitId).toArray()).sort(byName); }
+
+// ---------- template e uso degli sticker ----------
+
+export const TEMPLATE_KINDS = ['activation', 'action'];
+
+export async function listTemplates(kind) {
+  const rows = kind ? await db.templates.where('kind').equals(kind).toArray() : await db.templates.toArray();
+  return rows.sort((a, b) => a.id - b.id);
+}
+
+export const getTemplate = (id) => db.templates.get(id);
+
+// Template predefinito del tipo (settings.defaultTemplates); se manca o e' stato eliminato, il primo del tipo.
+export async function getDefaultTemplate(kind) {
+  const s = await db.settings.get('defaultTemplates');
+  const id = s && s.value ? s.value[kind] : null;
+  const row = id != null ? await db.templates.get(id) : null;
+  if (row && row.kind === kind) return row;
+  return (await listTemplates(kind))[0] || null;
+}
+
+// Tutto cio' che serve a disegnare uno sticker: righe del database e Blob delle immagini.
+export async function getStickerSource({ unitId = null, weaponId = null, actionId = null }) {
+  const [unit, weapon, action] = await Promise.all([
+    unitId != null ? db.units.get(unitId) : null,
+    weaponId != null ? db.weapons.get(weaponId) : null,
+    actionId != null ? db.actions.get(actionId) : null
+  ]);
+  const factionId = unit ? unit.factionId : weapon ? weapon.factionId : null;
+  const faction = factionId != null ? await db.factions.get(factionId) : null;
+  const gameId = faction ? faction.gameId : action ? action.gameId : null;
+  const game = gameId != null ? await db.games.get(gameId) : null;
+  const imgIds = [unit && unit.imageId, weapon && weapon.imageId].filter((x) => x != null);
+  const imgs = await getImagesById(imgIds);
+  const blobOf = (row) => (row && row.imageId != null && imgs.get(row.imageId) ? imgs.get(row.imageId).blob : null);
+  return { unit, weapon, action, faction, game, unitImage: blobOf(unit), weaponImage: blobOf(weapon) };
+}
+
+const MAX_RECENTS = 30;
+
+// Dopo Salva/Condividi: aggiorna lastUsed/useCount e la tabella recents (chiave unica, massimo 30).
+export async function recordUse({ unitId = null, weaponId = null, actionId = null, templateId = null }) {
+  const now = Date.now();
+  const key = [
+    unitId != null ? 'u' + unitId : '', weaponId != null ? 'w' + weaponId : '',
+    actionId != null ? 'a' + actionId : '', templateId != null ? 't' + templateId : ''
+  ].filter(Boolean).join('-');
+  if (!key) return;
+  await db.transaction('rw', db.units, db.weapons, db.actions, db.recents, async () => {
+    if (unitId != null) {
+      const u = await db.units.get(unitId);
+      if (u) await db.units.update(unitId, { lastUsed: now, useCount: (u.useCount || 0) + 1 });
+    }
+    if (weaponId != null) await db.weapons.update(weaponId, { lastUsed: now });
+    if (actionId != null) await db.actions.update(actionId, { lastUsed: now });
+    const row = { key, unitId, weaponId, actionId, templateId, usedAt: now };
+    const old = await db.recents.where('key').equals(key).first();
+    if (old) await db.recents.update(old.id, row);
+    else await db.recents.add(row);
+    const extra = (await db.recents.count()) - MAX_RECENTS;
+    if (extra > 0) {
+      const ids = await db.recents.orderBy('usedAt').limit(extra).primaryKeys();
+      await db.recents.bulkDelete(ids);
+    }
+  });
+}
 
 // ---------- immagini (tabella images) ----------
 

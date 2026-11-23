@@ -1,6 +1,7 @@
 // Router a hash e registrazione del service worker.
 
 const routes = {
+  anteprima: () => import('./screens/anteprima.js'),
   crea: () => import('./screens/crea.js'),
   libreria: () => import('./screens/libreria.js'),
   template: () => import('./screens/template.js'),
@@ -18,10 +19,29 @@ export function toast(msg) {
   toastTimer = setTimeout(() => { toastEl.hidden = true; }, 2500);
 }
 
+// Schermate senza voce nella barra in basso: la voce attiva resta quella di provenienza.
+const NO_TAB = new Set(['anteprima']);
+
+// Legge l'hash: #/anteprima?unit=3&weapon=5 -> { name: 'anteprima', segs: [], query: URLSearchParams }
+export function parseHash(hash = location.hash) {
+  const raw = hash.replace(/^#\/?/, '');
+  const qi = raw.indexOf('?');
+  const path = qi < 0 ? raw : raw.slice(0, qi);
+  const query = new URLSearchParams(qi < 0 ? '' : raw.slice(qi + 1));
+  const [name = '', ...segs] = path.split('/').filter(Boolean);
+  return { name, segs, query };
+}
+
+// true se in questa sessione si e' navigato almeno una volta dentro l'app (history.back() resta nell'app).
+let navCount = 0;
+export const canGoBack = () => navCount > 0;
+
 async function navigate() {
-  const name = (location.hash.replace(/^#\//, '').split(/[/?]/)[0]) || 'crea';
+  const { name } = parseHash();
   const key = routes[name] ? name : 'crea';
-  document.querySelectorAll('.tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.route === key));
+  if (!NO_TAB.has(key)) {
+    document.querySelectorAll('.tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.route === key));
+  }
   view.innerHTML = '';
   const mod = await routes[key]();
   mod.render(view);
@@ -31,7 +51,7 @@ async function navigate() {
 // Apre il database e crea i dati iniziali subito, senza bloccare l'interfaccia.
 import('./db.js').then((m) => m.ready()).catch((err) => console.warn('Database non pronto', err));
 
-window.addEventListener('hashchange', navigate);
+window.addEventListener('hashchange', () => { navCount++; navigate(); });
 if (!location.hash) location.hash = '#/crea';
 navigate();
 
