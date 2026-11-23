@@ -6,9 +6,39 @@ import { toast } from '../app.js';
 import { esc, menuSheet, confirmSheet, formSheet } from '../ui.js';
 import { pickImage, cropImage } from '../crop.js';
 import { startCardImport } from './carta.js';
+import { startPdfImport } from './pdfimport.js';
 
 const KIND_LABEL = { ranged: 'A distanza', melee: 'Mischia', other: 'Altro' };
 const KIND_OPTIONS = Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }));
+// Profilo testuale di un'arma importata dal PDF: "ATK 4 · HIT 3+ · DMG 3/4 · Range 8", Piercing 1".
+const profileText = (w) => (w.profile ? `ATK ${w.profile.atk} · HIT ${w.profile.hit} · DMG ${w.profile.dmg}${w.profile.rules && w.profile.rules.length ? ' · ' + w.profile.rules.join(', ') : ''}` : '');
+const RULE_TITLES = [['factionRule', 'Regola di fazione'], ['ploy-strategy', 'Stratagemmi Strategy'], ['ploy-firefight', 'Stratagemmi Firefight'], ['equipment', 'Equipaggiamento']];
+
+function rulesHTML(rules) {
+  if (!rules.length) return '';
+  return `<h2>Regole</h2>${RULE_TITLES.map(([kind, title]) => {
+    const rows = rules.filter((r) => r.kind === kind);
+    if (!rows.length) return '';
+    return `<details class="pdf-op"><summary><span class="pdf-op-name">${esc(title)}</span><span class="meta">${rows.length}</span></summary>${rows.map((r) =>
+      `<p class="pdf-txt"><b>${esc(r.name)}</b>${r.cost ? ` <span class="pdf-cost">${esc(r.cost)}</span>` : ''} ${esc(r.text)}</p>`).join('')}</details>`;
+  }).join('')}`;
+}
+
+function statsHTML(unit) {
+  const s = unit.stats;
+  if (!s) return '';
+  return `<div class="unit-stats">${[['APL', s.apl], ['MOVE', s.move], ['SAVE', s.save], ['WOUNDS', s.wounds]].map(([l, v]) =>
+    `<div><small>${l}</small><b>${esc(v ?? '–')}</b></div>`).join('')}</div>`;
+}
+
+function textBlocksHTML(unit) {
+  const ab = unit.abilities || [], ac = unit.actions || [], kw = unit.keywords || [];
+  if (!ab.length && !ac.length && !kw.length) return '';
+  return `${ab.length ? `<h2>Abilità</h2>${ab.map((a) => `<p class="pdf-txt"><b>${esc(a.name)}</b> ${esc(a.text)}</p>`).join('')}` : ''}
+    ${ac.length ? `<h2>Azioni</h2>${ac.map((a) => `<p class="pdf-txt"><b>${esc(a.name)}</b> <span class="pdf-cost">${esc(a.cost)}</span> ${esc(a.text)}</p>`).join('')}` : ''}
+    ${kw.length ? `<p class="meta">${esc(kw.join(', '))}</p>` : ''}`;
+}
+
 const lc = (s) => String(s || '').toLowerCase();
 const link = (...parts) => '#/libreria' + parts.map((p) => '/' + p).join('');
 
@@ -234,12 +264,14 @@ async function gameScreen(ctx) {
   const html = `
     ${crumbs([{ label: 'Libreria', href: link() }, { label: game.name }])}
     <h1>${esc(game.name)}</h1>
+    <div class="row"><button type="button" class="primary" data-import-pdf>Importa PDF squadra</button></div>
     ${sectionHead(L.faction, 'faction')}
     ${listHTML('faction', factions, { href: (f) => link('g' + game.id, 'f' + f.id), empty: `Vuoto. Tocca + per aggiungere: ${L.faction}.` })}
     ${sectionHead('Azioni', 'action')}
     ${listHTML('action', actions, { dot: (a) => a.accentColor, empty: 'Nessuna azione. Tocca + per aggiungerne una (es. Overwatch, Charge).' })}`;
 
   const wire = (root) => {
+    root.querySelector('[data-import-pdf]').addEventListener('click', () => startPdfImport({ gameId: game.id }));
     onAdd(root, 'action', async () => {
       const v = await formSheet({
         title: 'Nuova azione',
@@ -305,19 +337,21 @@ async function gameScreen(ctx) {
 async function factionScreen(ctx) {
   const { game, faction } = ctx;
   const L = game.labels;
-  const [units, weapons] = await Promise.all([D.listUnits(faction.id), D.listWeaponsOfFaction(faction.id)]);
+  const [units, weapons, rules] = await Promise.all([D.listUnits(faction.id), D.listWeaponsOfFaction(faction.id), D.listRules(faction.id)]);
   const wThumb = await weaponThumbs(ctx, weapons);
   const html = `
     ${crumbs([{ label: 'Libreria', href: link() }, { label: game.name, href: link('g' + game.id) }, { label: faction.name }])}
     <h1>${esc(faction.name)}</h1>
-    <div class="row"><button type="button" class="primary" data-import-card>Importa carta</button></div>
+    <div class="row"><button type="button" class="primary" data-import-pdf>Importa PDF squadra</button><button type="button" data-import-card>Importa carta</button></div>
     ${sectionHead(L.unit, 'unit')}
     ${listHTML('unit', units, { href: (u) => link('g' + game.id, 'f' + faction.id, 'u' + u.id), empty: `Vuoto. Tocca + per aggiungere: ${L.unit}.` })}
     ${sectionHead(`${L.weapon} della fazione`, 'weapon')}
-    ${listHTML('weapon', weapons, { thumb: wThumb, meta: (w) => `${KIND_LABEL[w.kind] || ''}${w.unitIds.length ? '' : ' · non collegata'}`, empty: `Nessuna: aggiungila dalla scheda di una miniatura o con +.` })}`;
+    ${listHTML('weapon', weapons, { thumb: wThumb, meta: (w) => [KIND_LABEL[w.kind] || '', profileText(w), w.unitIds.length ? '' : 'non collegata'].filter(Boolean).join(' · '), empty: `Nessuna: aggiungila dalla scheda di una miniatura o con +.` })}
+    ${rulesHTML(rules)}`;
 
   const wire = (root) => {
     root.querySelector('[data-import-card]').addEventListener('click', () => startCardImport({ gameId: game.id, factionId: faction.id }));
+    root.querySelector('[data-import-pdf]').addEventListener('click', () => startPdfImport({ gameId: game.id, factionId: faction.id }));
     onAdd(root, 'unit', async () => {
       const v = await formSheet({ title: `Nuovo ${lc(L.unit)}`, fields: [{ name: 'name', label: 'Nome', type: 'text', required: true }] });
       if (!v) return;
@@ -348,9 +382,11 @@ async function unitScreen(ctx) {
       <h1>${unit.fav ? '<span class="star">★</span> ' : ''}${esc(unit.name)}</h1>
       <button type="button" class="kebab" data-unit-menu aria-label="Menu miniatura">⋮</button>
     </div>
+    ${statsHTML(unit)}
     ${imgHTML}
     <h2>${esc(L.weapon)} (${weapons.length})</h2>
-    ${listHTML('weapon', weapons, { href: (w) => `#/anteprima?unit=${unit.id}&weapon=${w.id}`, thumb: wThumb, meta: (w) => KIND_LABEL[w.kind] || '', empty: `Nessuna ${lc(L.weapon)} collegata.` })}
+    ${listHTML('weapon', weapons, { href: (w) => `#/anteprima?unit=${unit.id}&weapon=${w.id}`, thumb: wThumb, meta: (w) => [KIND_LABEL[w.kind] || '', profileText(w)].filter(Boolean).join(' · '), empty: `Nessuna ${lc(L.weapon)} collegata.` })}
+    ${textBlocksHTML(unit)}
     <div class="row">
       <button type="button" class="primary" data-preview-unit>Sticker solo ${esc(lc(L.unit))}</button>
     </div>

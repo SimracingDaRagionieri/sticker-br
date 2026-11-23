@@ -20,6 +20,22 @@ db.version(1).stores({
   settings: 'key'
 });
 
+// Versione 2 (Passo 6): tabella rules (regola di fazione, stratagemmi, equipaggiamento). Ripete tutte le tabelle della v1.
+db.version(2).stores({
+  games: '++id, name',
+  factions: '++id, gameId, name',
+  units: '++id, factionId, gameId, name, fav, lastUsed',
+  weapons: '++id, factionId, *unitIds, name, fav, lastUsed',
+  actions: '++id, gameId, name, fav, lastUsed',
+  images: '++id, kind, cardId',
+  cards: '++id, factionId, createdAt',
+  templates: '++id, kind',
+  fonts: '++id, family',
+  recents: '++id, &key, usedAt',
+  settings: 'key',
+  rules: '++id, factionId, kind, name'
+});
+
 // ---------- utilita' ----------
 
 const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
@@ -454,6 +470,7 @@ async function purgeFactions(factionIds) {
   const imageIds = new Set([...units, ...weapons].map((x) => x.imageId).filter((x) => x != null));
   if (cardIds.length) (await db.images.where('cardId').anyOf(cardIds).primaryKeys()).forEach((k) => imageIds.add(k));
   await db.images.bulkDelete([...imageIds]);
+  await db.rules.where('factionId').anyOf(factionIds).delete();
   await db.cards.bulkDelete(cardIds);
   await db.weapons.bulkDelete(weapons.map((w) => w.id));
   await db.units.bulkDelete(units.map((u) => u.id));
@@ -493,4 +510,133 @@ export async function deleteUnit(id) {
     await db.images.bulkDelete(imageIds);
     await db.units.delete(id);
   });
+}
+
+
+// ---------- import PDF squadra (Passo 6) ----------
+// Campi extra senza indice (schema v1 invariato): units.stats/keywords/abilities/actions/source, weapons.profile.
+// Tabella rules (v2): { factionId, kind: factionRule|ploy-strategy|ploy-firefight|equipment, name, cost, text, page, source:'pdf' }.
+
+export const RULE_KINDS = ['factionRule', 'ploy-strategy', 'ploy-firefight', 'equipment'];
+export async function listRules(factionId) {
+  return (await db.rules.where('factionId').equals(factionId).toArray()).sort((a, b) => a.id - b.id);
+}
+export const countRules = (factionId) => db.rules.where('factionId').equals(factionId).count();
+
+const sameKey = (a, b) => String(a || '').toLowerCase().replace(/\s+/g, ' ').trim() === String(b || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+// Cerca la fazione per nome nel gioco (senza crearla).
+export async function findFactionByName(gameId, name) {
+  return (await db.factions.where('gameId').equals(gameId).toArray()).find((f) => sameKey(f.name, name)) || null;
+}
+
+// Riepilogo di cio' che l'import fara' (senza scrivere): serve alla revisione e alla conferma sulle immagini.
+// `match` = funzione (existingWeaponRows, groups) -> array id|null (pdfteam.matchWeaponGroups).
+export async function previewTeamSave({ gameId, factionId, team, groups, match }) {
+  const faction = factionId != null ? await db.factions.get(factionId) : await findFactionByName(gameId, team.faction.name);
+  const out = { factionExists: !!faction, factionId: faction ? faction.id : null, unitsNew: 0, unitsUpdated: 0, weaponsNew: 0, weaponsUpdated: 0, weaponImages: [], unitImages: [] };
+  if (!faction) {
+    out.unitsNew = team.operatives.length; out.weaponsNew = groups.length;
+    return out;
+  }
+  const units = await db.units.where('factionId').equals(faction.id).toArray();
+  const weapons = await db.weapons.where('factionId').equals(faction.id).toArray();
+  for (const op of team.operatives) {
+    const u = units.find((x) => sameKey(x.name, op.name));
+    if (u) { out.unitsUpdated++; if (u.imageId != null) out.unitImages.push(op.name); } else out.unitsNew++;
+  }
+  const ids = match(weapons, groups);
+  ids.forEach((id, i) => {
+    if (id == null) { out.weaponsNew++; return; }
+    out.weaponsUpdated++;
+    const w = weapons.find((x) => x.id === id);
+    if (w && w.imageId != null) out.weaponImages.push(i);
+  });
+  return out;
+}
+
+// Salva la squadra rivista. Una sola transazione: o tutto o niente.
+// opts: { gameId, factionId|null, team, groups, match, images: { weapons: Map(groupIndex -> {blob,width,height,thumb}), units: Map(opName -> {...}) },
+//         replaceWeaponImages: Set(groupIndex)|'all', replaceUnitImages: Set(opName)|'all' }
+export async function saveTeam(opts) {
+  const { gameId, team, groups, match, images = { weapons: new Map(), units: new Map() } } = opts;
+  const want = (set, key) => set === 'all' || (set instanceof Set && set.has(key));
+  const sum = { factionId: null, unitsNew: 0, unitsUpdated: 0, weaponsNew: 0, weaponsUpdated: 0, imagesSaved: 0, imagesKept: 0, rules: 0 };
+  await db.transaction('rw', db.tables, async () => {
+    const game = await db.games.get(gameId);
+    if (!game) throw new Error('Gioco non trovato');
+    let faction = opts.factionId != null ? await db.factions.get(opts.factionId) : await findFactionByName(gameId, team.faction.name);
+    if (!faction) {
+      const id = await addFaction(gameId, team.faction.name);
+      faction = await db.factions.get(id);
+    }
+    sum.factionId = faction.id;
+    if (team.faction.keywords && team.faction.keywords.length) await db.factions.update(faction.id, { keywords: team.faction.keywords });
+
+    // miniature
+    const units = await db.units.where('factionId').equals(faction.id).toArray();
+    const unitId = new Map();
+    for (const op of team.operatives) {
+      const fields = {
+        stats: { ...op.stats }, keywords: [...op.keywords],
+        abilities: op.abilities.map((a) => ({ name: a.name, text: a.text })),
+        actions: op.actions.map((a) => ({ name: a.name, cost: a.cost, text: a.text })),
+        source: 'pdf'
+      };
+      const u = units.find((x) => sameKey(x.name, op.name));
+      if (u) { await db.units.update(u.id, fields); unitId.set(op.name, u.id); sum.unitsUpdated++; }
+      else {
+        const id = await db.units.add({ factionId: faction.id, gameId: faction.gameId, name: cleanName(op.name), imageId: null, fav: 0, lastUsed: 0, useCount: 0, ...fields });
+        unitId.set(op.name, id); sum.unitsNew++;
+      }
+    }
+
+    // armi: stessa arma e stesso profilo su piu' operativi = una riga collegata a tutti
+    const existing = await db.weapons.where('factionId').equals(faction.id).toArray();
+    const ids = match(existing, groups);
+    const weaponId = [];
+    for (let i = 0; i < groups.length; i++) {
+      const g = groups[i];
+      const display = g.mode ? `${g.name} (${g.mode})` : g.name;
+      const linked = g.operatives.map((n) => unitId.get(n)).filter((x) => x != null);
+      const row = ids[i] != null ? existing.find((x) => x.id === ids[i]) : null;
+      if (row) {
+        const unitIds = [...new Set([...(row.unitIds || []), ...linked])];
+        const changes = { name: display, unitIds, profile: { ...g.profile, rules: [...g.profile.rules] } };
+        if (g.kind && g.kind !== 'other') changes.kind = g.kind; else if (!row.kind) changes.kind = 'other';
+        await db.weapons.update(row.id, changes);
+        weaponId.push(row.id); sum.weaponsUpdated++;
+      } else {
+        const id = await db.weapons.add({
+          factionId: faction.id, unitIds: [...new Set(linked)], name: cleanName(display),
+          kind: WEAPON_KINDS.includes(g.kind) ? g.kind : 'other', imageId: null, fav: 0, lastUsed: 0,
+          profile: { ...g.profile, rules: [...g.profile.rules] }
+        });
+        weaponId.push(id); sum.weaponsNew++;
+      }
+    }
+
+    // immagini: mai sostituire senza consenso
+    const putImage = async (table, ownerId, kind, img, replace) => {
+      const row = await db[table].get(ownerId);
+      if (row.imageId != null && !replace) { sum.imagesKept++; return; }
+      const id = await db.images.add({ kind, blob: img.blob, width: img.width, height: img.height, thumb: img.thumb || null, createdAt: Date.now() });
+      await db[table].update(ownerId, { imageId: id });
+      if (row.imageId != null) await db.images.delete(row.imageId);
+      sum.imagesSaved++;
+    };
+    for (const [i, img] of images.weapons) if (weaponId[i] != null) await putImage('weapons', weaponId[i], 'weapon', img, want(opts.replaceWeaponImages, i));
+    for (const [n, img] of images.units) if (unitId.has(n)) await putImage('units', unitId.get(n), 'unit', img, want(opts.replaceUnitImages, n));
+
+    // regole: l'import precedente (source 'pdf') viene sostituito, cosi' non nascono doppioni
+    await db.rules.where('factionId').equals(faction.id).filter((r) => r.source === 'pdf').delete();
+    const rows = [
+      ...team.factionRule.map((r) => ({ kind: 'factionRule', name: r.name, cost: null, text: r.text, page: r.page })),
+      ...team.ploys.map((r) => ({ kind: r.kind === 'strategy' ? 'ploy-strategy' : 'ploy-firefight', name: r.name, cost: r.cost, text: r.text, page: r.page })),
+      ...team.equipment.map((r) => ({ kind: 'equipment', name: r.name, cost: null, text: r.text, page: r.page }))
+    ].map((r) => ({ factionId: faction.id, source: 'pdf', ...r }));
+    if (rows.length) await db.rules.bulkAdd(rows);
+    sum.rules = rows.length;
+  });
+  return sum;
 }

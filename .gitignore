@@ -1,2 +1,7 @@
 # Materiale Games Workshop protetto da copyright: mai nel repository pubblico
 tests/fixtures/
+
+# PDF sintetici generati da tests/make-synth-fixtures.py
+tests/fixtures-synth/
+node_modules
+package-lock.json
