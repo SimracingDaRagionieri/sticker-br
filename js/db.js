@@ -129,6 +129,7 @@ async function init() {
     await db.settings.put({ key: 'seeded', value: 1 });
   });
   await seedTemplates();
+  await seedActions();
   if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
     try {
       if (first || !(await navigator.storage.persisted())) await navigator.storage.persist();
@@ -163,6 +164,25 @@ async function seedTemplates() {
       }
       await db.settings.put({ key: 'templatesRev', value: 2 });
     }
+  });
+}
+
+// Una sola volta (settings.seededActions): azioni generate di Kill Team. Se il gioco "Kill Team" non c'e' (eliminato o
+// rinominato) non si crea nulla; i nomi gia' presenti (nel gioco o tra le globali) non si duplicano.
+const SEED_ACTIONS = ['Reposition', 'Dash', 'Fall Back', 'Charge', 'Shoot', 'Fight', 'Pick Up Marker', 'Place Marker'];
+
+async function seedActions() {
+  await db.transaction('rw', db.games, db.actions, db.settings, async () => {
+    if (await db.settings.get('seededActions')) return;
+    const kt = (await db.games.toArray()).find((g) => sameName(g.name, 'Kill Team'));
+    if (kt) {
+      const have = (await db.actions.toArray()).filter((a) => a.gameId == null || a.gameId === kt.id);
+      for (const name of SEED_ACTIONS) {
+        if (have.some((a) => sameName(a.name, name))) continue;
+        await db.actions.add({ gameId: kt.id, name, label: null, mode: 'generated', imageId: null, accentColor: null, fav: 0, lastUsed: 0 });
+      }
+    }
+    await db.settings.put({ key: 'seededActions', value: 1 });
   });
 }
 
@@ -210,10 +230,11 @@ export async function getStickerSource({ unitId = null, weaponId = null, actionI
   const faction = factionId != null ? await db.factions.get(factionId) : null;
   const gameId = faction ? faction.gameId : action ? action.gameId : null;
   const game = gameId != null ? await db.games.get(gameId) : null;
-  const imgIds = [unit && unit.imageId, weapon && weapon.imageId].filter((x) => x != null);
+  const imgIds = [unit && unit.imageId, weapon && weapon.imageId, action && action.imageId].filter((x) => x != null);
   const imgs = await getImagesById(imgIds);
   const blobOf = (row) => (row && row.imageId != null && imgs.get(row.imageId) ? imgs.get(row.imageId).blob : null);
-  return { unit, weapon, action, faction, game, unitImage: blobOf(unit), weaponImage: blobOf(weapon) };
+  // actionImage: icona di un'azione disegnata, oppure il PNG originale di un'azione 'png' (da esportare identico).
+  return { unit, weapon, action, faction, game, unitImage: blobOf(unit), weaponImage: blobOf(weapon), actionImage: blobOf(action) };
 }
 
 const MAX_RECENTS = 30;
@@ -407,14 +428,86 @@ function cleanColor(color) {
   return /^#[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : null;
 }
 
-export async function listActions(gameId) { return (await db.actions.where('gameId').equals(gameId).toArray()).sort(byName); }
-
-export async function addAction(gameId, name, accentColor = null) {
-  if (!(await db.games.get(gameId))) throw new Error('Gioco non trovato');
-  return db.actions.add({ gameId, name: cleanName(name), accentColor: cleanColor(accentColor), fav: 0, lastUsed: 0 });
+// IndexedDB non indicizza `null`: le azioni "valide per tutti i giochi" (gameId null) non compaiono in
+// where('gameId').equals(...). Si leggono con un filtro sull'intera tabella (poche righe).
+export async function listGlobalActions() {
+  return (await db.actions.filter((a) => a.gameId == null).toArray()).sort(byName);
 }
 
-export async function deleteAction(id) { await db.actions.delete(id); }
+// Azioni di un gioco; con includeGlobal (predefinito) anche quelle valide per tutti i giochi.
+// gameId null = solo le globali. Per una lista "solo di questo gioco" (es. Libreria) usare includeGlobal: false.
+export async function listActions(gameId, { includeGlobal = true } = {}) {
+  if (gameId == null) return listGlobalActions();
+  const own = await db.actions.where('gameId').equals(gameId).toArray();
+  const rows = includeGlobal ? [...own, ...(await db.actions.filter((a) => a.gameId == null).toArray())] : own;
+  return rows.sort(byName);
+}
+
+// mode: 'generated' (disegnata dal template Azione; image = icona facoltativa) oppure 'png'
+// (PNG importato, esce identico; image = il PNG). Le righe create prima del Passo 8 non hanno `mode`: sono 'generated'.
+export const actionMode = (a) => (a && a.mode === 'png' ? 'png' : 'generated');
+
+const sameName = (a, b) => String(a || '').toLowerCase().replace(/\s+/g, ' ').trim() === String(b || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+// Azione con lo stesso nome nello stesso ambito (gameId oppure null = tutti i giochi).
+export async function findActionByName(gameId, name) {
+  const rows = gameId == null ? await db.actions.filter((a) => a.gameId == null).toArray() : await db.actions.where('gameId').equals(gameId).toArray();
+  return rows.find((a) => sameName(a.name, name)) || null;
+}
+
+// gameId null = valida per tutti i giochi. extra: { label (testo a schermo), mode, image: { blob, width, height, thumb } }.
+export async function addAction(gameId, name, accentColor = null, extra = {}) {
+  if (gameId != null && !(await db.games.get(gameId))) throw new Error('Gioco non trovato');
+  const mode = extra.mode === 'png' ? 'png' : 'generated';
+  if (mode === 'png' && !extra.image) throw new Error('Serve il file PNG');
+  return db.transaction('rw', db.actions, db.images, async () => {
+    const id = await db.actions.add({
+      gameId: gameId ?? null, name: cleanName(name), label: cleanLabel(extra.label), mode, imageId: null,
+      accentColor: cleanColor(accentColor), fav: 0, lastUsed: 0
+    });
+    if (extra.image) await setActionImage(id, extra.image.blob, extra.image.width, extra.image.height, extra.image.thumb);
+    return id;
+  });
+}
+
+// Testo a schermo facoltativo (se vuoto lo sticker scrive il nome).
+function cleanLabel(label) {
+  const l = String(label ?? '').trim();
+  return l || null;
+}
+
+// Modifica nome, testo a schermo, colore, ambito. changes: { name?, label?, accentColor?, gameId? }.
+export async function updateAction(id, changes) {
+  const c = {};
+  if ('name' in changes) c.name = cleanName(changes.name);
+  if ('label' in changes) c.label = cleanLabel(changes.label);
+  if ('accentColor' in changes) c.accentColor = cleanColor(changes.accentColor);
+  if ('gameId' in changes) {
+    if (changes.gameId != null && !(await db.games.get(changes.gameId))) throw new Error('Gioco non trovato');
+    c.gameId = changes.gameId ?? null;
+  }
+  await db.actions.update(id, c);
+}
+
+export const setActionImage = (id, blob, width, height, thumb) => replaceImage('actions', 'action', id, blob, width, height, thumb);
+export const removeActionImage = (id) => dropImage('actions', id);
+
+// Sostituisce il PNG di un'azione 'png' (o trasforma un'azione disegnata in azione PNG).
+export async function setActionPng(id, blob, width, height, thumb) {
+  await db.transaction('rw', db.actions, db.images, async () => {
+    await setActionImage(id, blob, width, height, thumb);
+    await db.actions.update(id, { mode: 'png' });
+  });
+}
+
+export async function deleteAction(id) {
+  await db.transaction('rw', db.actions, db.images, async () => {
+    const a = await db.actions.get(id);
+    if (!a) return;
+    if (a.imageId != null) await db.images.delete(a.imageId);
+    await db.actions.delete(id);
+  });
+}
 
 export async function setActionColor(id, accentColor) {
   await db.actions.update(id, { accentColor: cleanColor(accentColor) });
@@ -527,6 +620,8 @@ export async function deleteGame(id) {
   await db.transaction('rw', db.tables, async () => {
     const factionIds = await db.factions.where('gameId').equals(id).primaryKeys();
     await purgeFactions(factionIds);
+    const acts = await db.actions.where('gameId').equals(id).toArray();
+    await db.images.bulkDelete(acts.map((a) => a.imageId).filter((x) => x != null));
     await db.actions.where('gameId').equals(id).delete();
     await db.games.delete(id);
   });

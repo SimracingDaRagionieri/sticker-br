@@ -65,7 +65,8 @@ export function buildIndex({ games = [], factions = [], units = [], weapons = []
 
   const actionEntries = actions.map((a) => entry('action', a, {
     factionId: null, gameId: a.gameId ?? null, accentColor: a.accentColor || null,
-    gameName: gameById.get(a.gameId)?.name || ''
+    mode: a.mode === 'png' ? 'png' : 'generated', label: a.label || null,
+    gameName: a.gameId == null ? 'Tutti i giochi' : (gameById.get(a.gameId)?.name || '')
   }));
 
   const sortFn = (a, b) => (b.fav - a.fav) || collator.compare(a.name, b.name);
@@ -134,7 +135,7 @@ export function searchIndex(index, query, { gameId = null, max = 8 } = {}) {
 
 // ---------- indice vivo agganciato al database ----------
 
-const INDEXED_FIELDS = new Set(['name', 'factionId', 'gameId', 'unitIds', 'fav', 'imageId', 'accentColor', 'labels']);
+const INDEXED_FIELDS = new Set(['name', 'factionId', 'gameId', 'unitIds', 'fav', 'imageId', 'accentColor', 'labels', 'mode', 'label']);
 const TABLES = ['games', 'factions', 'units', 'weapons', 'actions'];
 
 // Costruisce l'indice al primo uso e lo ricostruisce (in modo pigro) dopo ogni modifica alle tabelle.

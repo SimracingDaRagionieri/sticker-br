@@ -8,6 +8,7 @@ import { renderSticker } from '../render.js';
 import { saveBlob, shareBlobs, stickerFilename } from '../export.js';
 import { toast, parseHash, canGoBack } from '../app.js';
 import { esc } from '../ui.js';
+import { actionText, isPngAction } from '../stickerinput.js';
 
 let token = 0;
 
@@ -59,30 +60,39 @@ export async function render(el) {
     return;
   }
 
-  const templates = await D.listTemplates(kind);
+  // Azione 'png': PNG importato, esce identico. Niente template, niente testo da modificare, niente ridisegno.
+  const png = isPngAction(src);
+  if (png && !src.actionImage) {
+    message(el, 'Il PNG di questa azione non è stato trovato. Reimportalo dalla Libreria.', fallback);
+    return;
+  }
+  const templates = png ? [] : await D.listTemplates(kind);
   if (!alive()) return;
-  if (!templates.length) {
+  if (!png && !templates.length) {
     message(el, 'Nessun template disponibile per questo tipo di sticker.', fallback);
     return;
   }
   const byId = templates.find((t) => t.id === wantedTemplate);
-  const tpl0 = byId || (await D.getDefaultTemplate(kind)) || templates[0];
+  const tpl0 = png ? null : (byId || (await D.getDefaultTemplate(kind)) || templates[0]);
   if (!alive()) return;
 
   const L = (game && game.labels) || { unit: 'Unità', weapon: 'Arma' };
   const hasUnitImg = !!src.unitImage;
   const hasWeaponImg = !!src.weaponImage;
+  const hasIcon = !!action && !png && !!src.actionImage;
 
   const st = {
     tpl: tpl0,
     showUnitImg: false,
     showWeaponImg: false,
+    showIcon: hasIcon, // l'icona dell'azione, se c'e', e' mostrata di default (come negli sticker di Crea)
     unitText: unit ? unit.name : '',
     weaponText: weapon ? weapon.name : '',
-    actionText: action ? action.name : ''
+    actionText: actionText(action)
   };
   // Gli interruttori partono da quanto prevede il template, solo se l'immagine esiste.
   const resetToggles = () => {
+    if (png) return;
     const cfg = st.tpl.config || {};
     st.showUnitImg = hasUnitImg && !!(cfg.image && cfg.image.show);
     st.showWeaponImg = hasWeaponImg && !!(cfg.weaponImage && cfg.weaponImage.show);
@@ -104,17 +114,18 @@ export async function render(el) {
       <img id="pv-img" alt="Anteprima dello sticker" hidden>
       <span class="pv-wait" id="pv-wait">Disegno lo sticker…</span>
     </div>
-    <h2>Template</h2>
+    ${png ? '<p class="meta">PNG importato: lo sticker è il file originale, senza modifiche né ricompressione.</p>' : `<h2>Template</h2>
     <div class="chips" role="group" aria-label="Template">
       ${templates.map((t) => `<button type="button" class="chip" data-tpl="${t.id}" aria-pressed="${t.id === st.tpl.id}">${esc(t.name)}</button>`).join('')}
-    </div>
+    </div>`}
+    ${kind === 'action' && hasIcon ? `<div class="toggles"><label class="check"><input type="checkbox" data-toggle="icon"><span>Icona azione</span></label></div>` : ''}
     ${kind === 'activation' ? `
       <div class="toggles">
         ${unit ? `<label class="check"><input type="checkbox" data-toggle="unit"${hasUnitImg ? '' : ' disabled'}><span>Immagine ${esc(L.unit.toLowerCase())}${hasUnitImg ? '' : ' (non importata)'}</span></label>` : ''}
         ${weapon ? `<label class="check"><input type="checkbox" data-toggle="weapon"${hasWeaponImg ? '' : ' disabled'}><span>Immagine ${esc(L.weapon.toLowerCase())}${hasWeaponImg ? '' : ' (non importata)'}</span></label>` : ''}
       </div>` : ''}
-    <h2>Testo <span class="meta">(solo per questo sticker)</span></h2>
-    ${kind === 'action'
+    ${png ? '' : `<h2>Testo <span class="meta">(solo per questo sticker)</span></h2>`}
+    ${png ? '' : kind === 'action'
       ? `<label class="field"><span>Azione</span><input type="text" data-text="action" value="${esc(st.actionText)}" autocomplete="off" spellcheck="false"></label>`
       : `${unit ? `<label class="field"><span>${esc(L.unit)}</span><input type="text" data-text="unit" value="${esc(st.unitText)}" autocomplete="off" spellcheck="false"></label>` : ''}
          ${weapon ? `<label class="field"><span>${esc(L.weapon)}</span><input type="text" data-text="weapon" value="${esc(st.weaponText)}" autocomplete="off" spellcheck="false"></label>` : ''}`}
@@ -128,9 +139,10 @@ export async function render(el) {
   const img = $('#pv-img');
   const wait = $('#pv-wait');
   const syncToggles = () => {
-    const u = $('[data-toggle="unit"]'), w = $('[data-toggle="weapon"]');
+    const u = $('[data-toggle="unit"]'), w = $('[data-toggle="weapon"]'), ic = $('[data-toggle="icon"]');
     if (u) u.checked = st.showUnitImg;
     if (w) w.checked = st.showWeaponImg;
+    if (ic) ic.checked = st.showIcon;
   };
   syncToggles();
 
@@ -142,12 +154,12 @@ export async function render(el) {
 
   const buildInput = () => {
     const cfg = structuredClone(st.tpl.config || {});
-    cfg.image = { ...(cfg.image || {}), show: st.showUnitImg };
+    cfg.image = { ...(cfg.image || {}), show: action ? st.showIcon : st.showUnitImg };
     cfg.weaponImage = { ...(cfg.weaponImage || {}), show: st.showWeaponImg };
     const data = {
       unitName: st.unitText, weaponName: st.weaponText, actionName: st.actionText,
       factionName: faction ? faction.name : '',
-      unitImage: src.unitImage, weaponImage: src.weaponImage,
+      unitImage: action ? src.actionImage : src.unitImage, weaponImage: src.weaponImage,
       accentColor: action ? action.accentColor : null
     };
     return { data, cfg };
@@ -157,8 +169,8 @@ export async function render(el) {
     clearTimeout(timer);
     dirty = false;
     const mine = ++gen;
-    const { data, cfg } = buildInput();
-    const p = renderSticker(data, cfg);
+    // Azione 'png': il Blob originale, mai ridisegnato.
+    const p = png ? Promise.resolve(src.actionImage) : (() => { const { data, cfg } = buildInput(); return renderSticker(data, cfg); })();
     pending = p;
     p.then((blob) => {
       if (!alive() || mine !== gen) return;
@@ -184,7 +196,7 @@ export async function render(el) {
   const favBtn = $('[data-fav]');
   const comboParts = () => ({
     unitId: unit ? unit.id : null, weaponId: weapon ? weapon.id : null,
-    actionId: action ? action.id : null, templateId: st.tpl.id
+    actionId: action ? action.id : null, templateId: png ? null : st.tpl.id
   });
   const paintFav = (on) => {
     favBtn.setAttribute('aria-pressed', String(on));
@@ -224,9 +236,10 @@ export async function render(el) {
     draw();
   }));
 
-  const u = $('[data-toggle="unit"]'), w = $('[data-toggle="weapon"]');
+  const u = $('[data-toggle="unit"]'), w = $('[data-toggle="weapon"]'), ic = $('[data-toggle="icon"]');
   if (u) u.addEventListener('change', () => { st.showUnitImg = u.checked; draw(); });
   if (w) w.addEventListener('change', () => { st.showWeaponImg = w.checked; draw(); });
+  if (ic) ic.addEventListener('change', () => { st.showIcon = ic.checked; draw(); });
 
   el.querySelectorAll('[data-text]').forEach((inp) => inp.addEventListener('input', () => {
     st[inp.dataset.text + 'Text'] = inp.value;
@@ -254,7 +267,7 @@ export async function render(el) {
       if (used) {
         await D.recordUse({
           unitId: unit ? unit.id : null, weaponId: weapon ? weapon.id : null,
-          actionId: action ? action.id : null, templateId: st.tpl.id
+          actionId: action ? action.id : null, templateId: png ? null : st.tpl.id
         });
       }
     } catch (err) {

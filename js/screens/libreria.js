@@ -7,6 +7,7 @@ import { esc, menuSheet, confirmSheet, formSheet } from '../ui.js';
 import { pickImage, cropImage } from '../crop.js';
 import { startCardImport } from './carta.js';
 import { startPdfImport } from './pdfimport.js';
+import { actionsSections } from './azioni.js';
 
 const KIND_LABEL = { ranged: 'A distanza', melee: 'Mischia', other: 'Altro' };
 const KIND_OPTIONS = Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }));
@@ -41,21 +42,6 @@ function textBlocksHTML(unit) {
 
 const lc = (s) => String(s || '').toLowerCase();
 const link = (...parts) => '#/libreria' + parts.map((p) => '/' + p).join('');
-
-// Colori accento delle azioni (valore salvato: '#rrggbb' oppure '' = nessuno).
-const ACTION_COLORS = [
-  ['', 'Nessuno'], ['#e53935', 'Rosso'], ['#fb8c00', 'Arancione'], ['#fdd835', 'Giallo'],
-  ['#43a047', 'Verde'], ['#00acc1', 'Azzurro'], ['#1e88e5', 'Blu'], ['#8e24aa', 'Viola'],
-  ['#ec407a', 'Rosa'], ['#bdbdbd', 'Grigio'], ['#ffffff', 'Bianco']
-];
-
-function colorField(current) {
-  const cur = String(current || '').toLowerCase();
-  const options = ACTION_COLORS.map(([value, label]) => ({ value, label }));
-  // Un colore non in elenco (es. impostato in futuro) resta selezionabile e non va perso.
-  if (cur && !ACTION_COLORS.some(([v]) => v === cur)) options.push({ value: cur, label: `Personalizzato (${cur})` });
-  return { name: 'color', label: 'Colore accento (facoltativo)', type: 'select', value: cur, options };
-}
 
 // Azioni sulle immagini, per tipo di elemento.
 const IMG_API = {
@@ -208,15 +194,19 @@ async function guard(fn) {
   try { await fn(); } catch (err) { console.error(err); toast('Errore: ' + err.message); }
 }
 
+// Componenti condivisi con azioni.js (passati come parametro per evitare un'importazione circolare).
+const ACTION_HELPERS = { sectionHead, listHTML, onAdd, onMenu, entityMenu, blobUrl, guard };
+
 // ---------- livello 0: giochi ----------
 
 async function gamesScreen(ctx) {
-  const games = await D.listGames();
+  const [games, acts] = await Promise.all([D.listGames(), actionsSections(ctx, ACTION_HELPERS, null)]);
   const html = `
     ${crumbs([{ label: 'Libreria' }])}
     <h1>Libreria</h1>
     ${sectionHead('Giochi', 'game')}
-    ${listHTML('game', games, { href: (g) => link('g' + g.id), meta: (g) => `${g.labels.faction} · ${g.labels.unit} · ${g.labels.weapon}`, empty: 'Nessun gioco. Tocca + per aggiungerne uno.' })}`;
+    ${listHTML('game', games, { href: (g) => link('g' + g.id), meta: (g) => `${g.labels.faction} · ${g.labels.unit} · ${g.labels.weapon}`, empty: 'Nessun gioco. Tocca + per aggiungerne uno.' })}
+    ${acts.html}`;
 
   const labelFields = (labels = {}) => [
     { name: 'faction', label: 'Etichetta per le fazioni (es. Squadra, Esercito)', value: labels.faction ?? '', type: 'text' },
@@ -225,6 +215,7 @@ async function gamesScreen(ctx) {
   ];
 
   const wire = (root) => {
+    acts.wire(root);
     onAdd(root, 'game', async () => {
       const v = await formSheet({
         title: 'Nuovo gioco',
@@ -259,7 +250,7 @@ async function gamesScreen(ctx) {
 
 async function gameScreen(ctx) {
   const { game } = ctx;
-  const [factions, actions] = await Promise.all([D.listFactions(game.id), D.listActions(game.id)]);
+  const [factions, acts] = await Promise.all([D.listFactions(game.id), actionsSections(ctx, ACTION_HELPERS, game)]);
   const L = game.labels;
   const html = `
     ${crumbs([{ label: 'Libreria', href: link() }, { label: game.name }])}
@@ -267,44 +258,11 @@ async function gameScreen(ctx) {
     <div class="row"><button type="button" class="primary" data-import-pdf>Importa PDF squadra</button></div>
     ${sectionHead(L.faction, 'faction')}
     ${listHTML('faction', factions, { href: (f) => link('g' + game.id, 'f' + f.id), empty: `Vuoto. Tocca + per aggiungere: ${L.faction}.` })}
-    ${sectionHead('Azioni', 'action')}
-    ${listHTML('action', actions, { dot: (a) => a.accentColor, empty: 'Nessuna azione. Tocca + per aggiungerne una (es. Overwatch, Charge).' })}`;
+    ${acts.html}`;
 
   const wire = (root) => {
     root.querySelector('[data-import-pdf]').addEventListener('click', () => startPdfImport({ gameId: game.id }));
-    onAdd(root, 'action', async () => {
-      const v = await formSheet({
-        title: 'Nuova azione',
-        fields: [{ name: 'name', label: 'Nome', type: 'text', required: true }, colorField('')]
-      });
-      if (!v) return;
-      await guard(async () => { await D.addAction(game.id, v.name, v.color); ctx.refresh(); });
-    });
-    onMenu(root, 'action', actions, (a) => entityMenu(a, {
-      ctx, table: 'actions',
-      extra: [{
-        label: 'Anteprima sticker',
-        run: () => { location.hash = `#/anteprima?action=${a.id}`; }
-      }, {
-        label: 'Colore accento',
-        run: async () => {
-          const v = await formSheet({ title: `Colore: ${a.name}`, fields: [colorField(a.accentColor)] });
-          if (!v) return;
-          await guard(async () => { await D.setActionColor(a.id, v.color); ctx.refresh(); });
-        }
-      }],
-      rename: async () => {
-        const v = await formSheet({ title: 'Rinomina azione', fields: [{ name: 'name', label: 'Nome', value: a.name, type: 'text', required: true }] });
-        if (!v) return;
-        await guard(async () => { await D.patch('actions', a.id, { name: v.name }); ctx.refresh(); });
-      },
-      remove: async () => {
-        const ok = await confirmSheet({ title: `Eliminare «${a.name}»?`, confirmLabel: 'Elimina', danger: true });
-        if (!ok) return;
-        await guard(async () => { await D.deleteAction(a.id); toast('Eliminata'); ctx.refresh(); });
-      }
-    }));
-
+    acts.wire(root);
     onAdd(root, 'faction', async () => {
       const v = await formSheet({ title: `Nuova ${lc(L.faction)}`, fields: [{ name: 'name', label: 'Nome', type: 'text', required: true }] });
       if (!v) return;

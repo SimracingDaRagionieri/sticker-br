@@ -8,8 +8,7 @@
 
 import * as D from '../db.js';
 import { createLiveIndex, searchIndex, normalize } from '../search.js';
-import { renderSticker } from '../render.js';
-import { buildStickerInput, stickerNameParts } from '../stickerinput.js';
+import { renderStickerFor, stickerNameParts, isPngAction } from '../stickerinput.js';
 import { saveBlob, stickerFilename } from '../export.js';
 import { toast, parseHash, canGoBack } from '../app.js';
 import { esc, openSheet, closeSheet } from '../ui.js';
@@ -50,30 +49,29 @@ async function templateFor(templateId, kind) {
   return row;
 }
 
-// Disegna lo sticker di un elemento (recente, preferito o azione) con gli interruttori predefiniti del template.
+// Dati per disegnare lo sticker di un elemento (recente, preferito o azione) con gli interruttori predefiniti del template.
+// Azioni 'png': nessun template (tpl null), lo sticker e' il PNG importato, identico.
 async function stickerFor(item) {
   const src = await D.getStickerSource({ unitId: item.unitId, weaponId: item.weaponId, actionId: item.actionId });
+  if (isPngAction(src)) return { src, tpl: null };
   const tpl = await templateFor(item.templateId, src.action ? 'action' : 'activation');
   if (!tpl) throw new Error('Nessun template disponibile');
-  const { data, cfg } = buildStickerInput(src, tpl);
-  return { src, tpl, cfg, data };
+  return { src, tpl };
 }
 
 function signature(item, tpl) {
   const { u, w, a } = item;
-  return [tpl.id, JSON.stringify(tpl.config),
-    u ? `u${u.id}:${u.name}:${u.imageId}` : '', w ? `w${w.id}:${w.name}:${w.imageId}` : '', a ? `a${a.id}:${a.name}:${a.accentColor}` : ''].join('|');
+  return [tpl ? tpl.id : 'png', tpl ? JSON.stringify(tpl.config) : '',
+    u ? `u${u.id}:${u.name}:${u.imageId}` : '', w ? `w${w.id}:${w.name}:${w.imageId}` : '',
+    a ? `a${a.id}:${a.name}:${a.label || ''}:${a.mode || ''}:${a.imageId}:${a.accentColor}` : ''].join('|');
 }
 
 async function thumbUrl(item) {
-  const kind = item.actionId != null ? 'action' : 'activation';
-  const tpl = await templateFor(item.templateId, kind);
-  if (!tpl) throw new Error('Nessun template disponibile');
+  const { src, tpl } = await stickerFor(item);
   const sig = signature(item, tpl);
   const hit = thumbCache.get(sig);
   if (hit) { thumbCache.delete(sig); thumbCache.set(sig, hit); return hit; } // piu' recente in fondo
-  const { data, cfg } = await stickerFor(item);
-  const blob = await renderSticker(data, cfg);
+  const blob = await renderStickerFor(src, tpl);
   const url = URL.createObjectURL(blob);
   cachePut(sig, url);
   return url;
@@ -204,10 +202,10 @@ async function quickSave(item) {
   if (saving) return;
   saving = true;
   try {
-    const { src, tpl, cfg, data } = await stickerFor(item);
-    const blob = await renderSticker(data, cfg);
+    const { src, tpl } = await stickerFor(item);
+    const blob = await renderStickerFor(src, tpl);
     saveBlob(blob, stickerFilename(stickerNameParts(src)));
-    await D.recordUse({ unitId: item.unitId, weaponId: item.weaponId, actionId: item.actionId, templateId: tpl.id });
+    await D.recordUse({ unitId: item.unitId, weaponId: item.weaponId, actionId: item.actionId, templateId: tpl ? tpl.id : null });
     toast('Salvato');
     if (ui.tab === 'recenti' && !ui.q) refreshWhenIdle();
   } catch (err) {

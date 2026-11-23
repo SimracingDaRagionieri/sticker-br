@@ -228,9 +228,10 @@ with sync_playwright() as pw:
     wait_stickers(page, 2)
     page.screenshot(path=f'{SHOTS}/4-preferiti.png')
     page.click('[data-tab="azioni"]')
-    page.wait_for_function("document.querySelectorAll('#crea-view .stk').length === 40")
+    page.wait_for_function("document.querySelectorAll('#crea-view .stk').length === 48")
     wait_stickers(page, 4)
-    check(page.locator('#crea-view .stk').count() == 40, '40 azioni in griglia')
+    # 40 di prova + le 8 azioni Kill Team precaricate dal Passo 8
+    check(page.locator('#crea-view .stk').count() == 48, '48 azioni in griglia (40 di prova + 8 di Kill Team)')
     page.screenshot(path=f'{SHOTS}/5-azioni.png')
     page.click('#crea-view .stk >> nth=0')
     page.wait_for_url(re.compile(r'#/anteprima\?action=\d+$'))
