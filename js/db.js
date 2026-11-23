@@ -282,6 +282,34 @@ export async function imageStats() {
   };
 }
 
+// ---------- icone di riferimento per il riconoscimento delle carte (Passo 5) ----------
+// settings.iconTemplates = { [gameId]: { ranged?: Blob, melee?: Blob } }  (PNG in grigio alla scala di lavoro)
+
+export async function getIconTemplates(gameId) {
+  const s = await db.settings.get('iconTemplates');
+  return (s && s.value && s.value[gameId]) || {};
+}
+
+// parts: { ranged?: Blob, melee?: Blob }; unisce alle icone gia' salvate del gioco.
+export async function setIconTemplates(gameId, parts) {
+  await db.transaction('rw', db.settings, async () => {
+    const s = await db.settings.get('iconTemplates');
+    const all = { ...(s ? s.value : {}) };
+    all[gameId] = { ...(all[gameId] || {}), ...parts };
+    await db.settings.put({ key: 'iconTemplates', value: all });
+  });
+}
+
+export async function clearIconTemplates(gameId) {
+  await db.transaction('rw', db.settings, async () => {
+    const s = await db.settings.get('iconTemplates');
+    if (!s || !s.value || !(gameId in s.value)) return;
+    const all = { ...s.value };
+    delete all[gameId];
+    await db.settings.put({ key: 'iconTemplates', value: all });
+  });
+}
+
 // ---------- scrittura generica ----------
 
 // Modifica campi di un record (nome, accentColor, ecc.).

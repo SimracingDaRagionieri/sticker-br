@@ -5,6 +5,7 @@ import * as D from '../db.js';
 import { toast } from '../app.js';
 import { esc, menuSheet, confirmSheet, formSheet } from '../ui.js';
 import { pickImage, cropImage } from '../crop.js';
+import { startCardImport } from './carta.js';
 
 const KIND_LABEL = { ranged: 'A distanza', melee: 'Mischia', other: 'Altro' };
 const KIND_OPTIONS = Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }));
@@ -309,12 +310,14 @@ async function factionScreen(ctx) {
   const html = `
     ${crumbs([{ label: 'Libreria', href: link() }, { label: game.name, href: link('g' + game.id) }, { label: faction.name }])}
     <h1>${esc(faction.name)}</h1>
+    <div class="row"><button type="button" class="primary" data-import-card>Importa carta</button></div>
     ${sectionHead(L.unit, 'unit')}
     ${listHTML('unit', units, { href: (u) => link('g' + game.id, 'f' + faction.id, 'u' + u.id), empty: `Vuoto. Tocca + per aggiungere: ${L.unit}.` })}
     ${sectionHead(`${L.weapon} della fazione`, 'weapon')}
     ${listHTML('weapon', weapons, { thumb: wThumb, meta: (w) => `${KIND_LABEL[w.kind] || ''}${w.unitIds.length ? '' : ' · non collegata'}`, empty: `Nessuna: aggiungila dalla scheda di una miniatura o con +.` })}`;
 
   const wire = (root) => {
+    root.querySelector('[data-import-card]').addEventListener('click', () => startCardImport({ gameId: game.id, factionId: faction.id }));
     onAdd(root, 'unit', async () => {
       const v = await formSheet({ title: `Nuovo ${lc(L.unit)}`, fields: [{ name: 'name', label: 'Nome', type: 'text', required: true }] });
       if (!v) return;
@@ -352,6 +355,9 @@ async function unitScreen(ctx) {
       <button type="button" class="primary" data-preview-unit>Sticker solo ${esc(lc(L.unit))}</button>
     </div>
     <div class="row">
+      <button type="button" data-import-card>Importa carta (profili ${esc(lc(L.weapon))})</button>
+    </div>
+    <div class="row">
       <button type="button" data-add-weapon>Aggiungi ${esc(lc(L.weapon))}</button>
       <button type="button" data-link-weapon>Collega ${esc(lc(L.weapon))} della fazione</button>
     </div>`;
@@ -362,6 +368,7 @@ async function unitScreen(ctx) {
     if (imp) imp.addEventListener('click', () => imageFlow(ctx, 'unit', unit, 'pick'));
     const imgMenu = root.querySelector('[data-img-menu]');
     if (imgMenu) imgMenu.addEventListener('click', () => imageMenu(ctx, 'unit', unit, `Immagine di ${unit.name}`));
+    root.querySelector('[data-import-card]').addEventListener('click', () => startCardImport({ gameId: game.id, factionId: faction.id, unitId: unit.id }));
     root.querySelector('[data-preview-unit]').addEventListener('click', () => { location.hash = `#/anteprima?unit=${unit.id}`; });
     root.querySelector('[data-add-weapon]').addEventListener('click', () => addWeaponForm(ctx, unit, L));
     root.querySelector('[data-link-weapon]').addEventListener('click', async () => {

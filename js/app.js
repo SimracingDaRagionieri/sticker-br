@@ -2,6 +2,7 @@
 
 const routes = {
   anteprima: () => import('./screens/anteprima.js'),
+  carta: () => import('./screens/carta.js'),
   crea: () => import('./screens/crea.js'),
   libreria: () => import('./screens/libreria.js'),
   template: () => import('./screens/template.js'),
@@ -20,7 +21,7 @@ export function toast(msg) {
 }
 
 // Schermate senza voce nella barra in basso: la voce attiva resta quella di provenienza.
-const NO_TAB = new Set(['anteprima']);
+const NO_TAB = new Set(['anteprima', 'carta']);
 
 // Legge l'hash: #/anteprima?unit=3&weapon=5 -> { name: 'anteprima', segs: [], query: URLSearchParams }
 export function parseHash(hash = location.hash) {
@@ -34,6 +35,7 @@ export function parseHash(hash = location.hash) {
 
 // true se in questa sessione si e' navigato almeno una volta dentro l'app (history.back() resta nell'app).
 let navCount = 0;
+let current = null; // modulo della schermata aperta
 export const canGoBack = () => navCount > 0;
 
 async function navigate() {
@@ -42,8 +44,10 @@ async function navigate() {
   if (!NO_TAB.has(key)) {
     document.querySelectorAll('.tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.route === key));
   }
+  if (current && current.cleanup) current.cleanup(); // le schermate possono liberare memoria quando si esce
   view.innerHTML = '';
   const mod = await routes[key]();
+  current = mod;
   mod.render(view);
   window.scrollTo(0, 0);
 }

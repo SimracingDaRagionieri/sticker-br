@@ -2,9 +2,9 @@
 
 Specifica e piano di sviluppo (documento del 22/11/2026). I prompt dei singoli passi fanno riferimento alle sezioni 2–4.
 
-## Stato di avanzamento (aggiornato al 23/11/2026)
+## Stato di avanzamento (aggiornato al 23/11/2026, sera)
 
-- Passi 1, 2, 3 e 4 completati. CACHE_VERSION 'v6'.
+- Passi 1, 2, 3, 4 e 5 completati (il Passo 5 va ancora provato sul telefono). CACHE_VERSION 'v7'.
 - Passo 3 realizzato in forma semplificata: il ritaglio avviene direttamente sull'immagine di miniatura/arma (js/crop.js), senza tabella `cards` né schermata `#/ritaglio`. Superato dal nuovo Passo 5: le carte non si salvano.
 - Anticipo parziale del Passo 7: in Libreria, dentro ogni gioco, sezione Azioni con aggiungi, rinomina, preferito, elimina e `accentColor` facoltativo (righe `actions` = `{ gameId, name, accentColor, fav, lastUsed }`).
 - Passo 4: js/render.js (`renderSticker(data, config)`, `normalizeConfig`), font in /fonts (woff2 Latin/Latin-ext, licenze OFL-*.txt), template predefiniti "Attivazione", "Solo testo" (activation) e "Azione" (action) creati una volta sola (`settings.seededTemplates`, `settings.defaultTemplates` = {activation: id, action: id}), schermata `js/screens/anteprima.js`.
@@ -15,7 +15,15 @@ Specifica e piano di sviluppo (documento del 22/11/2026). I prompt dei singoli p
 - Provvisorio in Libreria: tocco su un'arma nella scheda miniatura e pulsante "Sticker solo <miniatura>" aprono l'Anteprima; menu ⋮ di un'azione: "Anteprima sticker".
 - Attenzione per il Passo 6: eliminando giochi/miniature/armi/azioni le righe `recents` non vengono ripulite; ignorare i recenti con riferimenti mancanti.
 - Piano riorganizzato (23/11/2026): nuovo Passo 5 "Importa carta e profili arma automatici" (senza OCR, icone insegnate una sola volta, fasce correggibili a mano); i vecchi Passi 5-9 sono ora 6-10.
-- Prossimo: Passo 5 (importa carta e profili arma). Poi Passo 6 (schermata Crea). Restano da fare del Passo 7 (azioni): campi `label`, `mode`, `imageId`, `templateId`, "Importa PNG", "Valida per tutti i giochi", azioni predefinite di Kill Team.
+- Passo 5 (importa carta e profili arma automatici) realizzato:
+  - `js/cardscan.js` (parte pura, senza DOM): `findWeaponRowsGray(card, templates, { sensitivity })` con card/icone in grigio `{data,width,height}` a larghezza `SCAN_W` = 480; correlazione normalizzata (integral image per media/varianza), scale 0.8-1.25, scansione grossolana a passo 3 + rifinitura ±2 px, soglia = `thresholdFor(sens)` (0 -> 0.80, 0.5 -> 0.625, 1 -> 0.45), soppressione dei doppioni per sovrapposizione verticale, filtro "colonna delle icone" (scarta le isolate: meglio meno fasce), fascia = da 0.4 x altezza icona sopra l'icona fino alla riga dopo (ultima: passo mediano, o 3 x icona se e' una sola). Helper con DOM: `canvasToGray`, `cropToTemplate(canvas, {x,y,w,h})` -> PNG grigio a scala di lavoro, `templateFromBlob`, `findWeaponRows(canvas, iconTemplates, { sensitivity, cache })` -> fasce in pixel della carta originale. Tempo misurato: ~0.5 s su PC per una carta 480x672 con 2 icone x 5 scale.
+  - `js/screens/carta.js`, route `#/carta?g=<gioco>&f=<fazione>[&u=<miniatura>]` (senza voce nella barra; la carta ridotta a 2400 px vive solo in memoria in `pending`, nessuna tabella `cards`; se la pagina viene ricaricata su #/carta si torna in Libreria). `startCardImport({gameId, factionId, unitId})` e' chiamato dai pulsanti "Importa carta" della pagina fazione e della scheda miniatura (il selettore file si apre subito nel tocco). `export function cleanup()`: app.js ora chiama `cleanup()` della schermata che si lascia (se esiste).
+  - Icone: `settings.iconTemplates = { [gameId]: { ranged?: Blob, melee?: Blob } }` (PNG grigi alla scala di lavoro) con `getIconTemplates`, `setIconTemplates(gameId, parts)` (unisce), `clearIconTemplates(gameId)` in db.js. Primo uso per gioco: modalita' "Insegna" (riquadro sull'icona a distanza, poi sulla mischia; "Non c'e'"/"Salta" se manca un tipo). "Reimposta icone" e' nel menu ⋮ della schermata carta.
+  - Fasce: `{ id, y0, y1, x0, x1, kind: ranged|melee|other, src: auto|manual, edited }` in pixel della carta; si sposta dentro la fascia, si ridimensiona dai bordi (sopra/sotto sempre; sinistra/destra solo se selezionata), "+ Fascia" (al centro della vista, tipo "Altro"), "Elimina", "Rileva armi" (rilancia e conserva le fasce manuali o modificate), cursore Sensibilita' (rilancia al rilascio). Un dito fuori dalle fasce sposta la carta, due dita zoomano.
+  - Conferma (pannello dal basso): un campo "Arma" per fascia (arma della fazione con indicazioni "gia' collegata"/"ha profilo", oppure Nuova + nome + tipo preselezionato dall'icona). Dalla pagina fazione c'e' anche la scelta della miniatura (esistente o nuova). Un nome nuovo uguale (senza maiuscole/spazi doppi) a un'arma esistente la riusa; la stessa arma su due fasce e' bloccata. Se l'arma ha gia' un profilo: pannello "Sostituisci / Tieni quelli esistenti (collega soltanto) / Torna indietro". Profili salvati con `setWeaponImage` (PNG, lato lungo max 1200 px, nessuna trasparenza), collegamento con `setUnitWeapons` (unione con le armi gia' collegate). Poi proposta facoltativa di ritaglio della miniatura con `cropImage` dalla stessa carta (JPEG 0.92 in memoria). Uscita: dalla scheda miniatura `history.back()`; dalla fazione `location.replace` sulla scheda miniatura.
+  - z-index: la schermata carta sta a 9 (sotto toast 11 e pannelli 20, sopra la barra); il ritaglio di crop.js resta a 30.
+  - Test fuori dall'interfaccia: `node tests/cardscan-test.mjs` (carte finte da `tests/fakecard.mjs`: dritte, icone -15%/+20%, rumore, storte ±2.5 gradi, senza armi). La cartella `tests/` non e' servita ne' messa in cache.
+- Prossimo: Passo 6 (schermata Crea). Idee emerse dal Passo 5: al riuso di un'arma la sua immagine resta quella della prima carta; ricerca per nome arma nel Passo 6 trova anche armi non collegate a nessuna miniatura. Restano da fare del Passo 7 (azioni): campi `label`, `mode`, `imageId`, `templateId`, "Importa PNG", "Valida per tutti i giochi", azioni predefinite di Kill Team.
 - Attenzione: IndexedDB non indicizza `null`; le azioni con `gameId: null` non compaiono in `listActions(gameId)`. Gestire l'unione con le azioni globali oppure usare `db.version(2)`.
 
 ## Sintesi e decisioni
@@ -217,7 +225,7 @@ Piano originale: Cropper.js 1.6.x; "Importa carta" da fazione e scheda miniatura
 
 Verifica: PNG largo 1080 px e trasparente in InShot; font giusto anche al primo avvio offline; nome lungo non esce dallo sticker; niente margini trasparenti inutili.
 
-### Passo 5 – Importa carta e profili arma automatici (NUOVO)
+### Passo 5 – Importa carta e profili arma automatici (FATTO, da provare sul telefono)
 
 Idea: si carica la foto/screenshot di una carta operativo e l'app propone da sola una striscia per ogni arma (profilo completo: nome, A, BS/WS, D, regole). Niente OCR: il nome dell'arma si scrive una sola volta; poi l'arma resta collegata all'operativo (e riusabile da altri operativi della fazione), quindi la carta di quell'operativo non serve più.
 
