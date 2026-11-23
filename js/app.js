@@ -62,7 +62,16 @@ async function navigate() {
 }
 
 // Apre il database e crea i dati iniziali subito, senza bloccare l'interfaccia.
-import('./db.js').then((m) => m.ready()).catch((err) => console.warn('Database non pronto', err));
+// I font importati (tabella fonts) si registrano a ogni avvio; render.js attende questa promessa prima di disegnare.
+const fontsLoaded = Promise.all([import('./db.js'), import('./fonts.js'), import('./render.js')])
+  .then(async ([d, f, r]) => {
+    await d.ready();
+    const p = f.loadUserFonts();
+    r.setFontGate(p);
+    await p;
+  })
+  .catch((err) => console.warn('Database o font non pronti', err));
+void fontsLoaded;
 
 window.addEventListener('hashchange', () => { navCount++; navigate(); });
 if (!location.hash) location.hash = '#/crea';

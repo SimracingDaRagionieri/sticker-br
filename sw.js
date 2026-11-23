@@ -1,5 +1,5 @@
 // Service worker cache-first. Incrementa CACHE_VERSION a ogni modifica ai file.
-const CACHE_VERSION = 'v13';
+const CACHE_VERSION = 'v14';
 const CACHE_NAME = 'sbr-' + CACHE_VERSION;
 
 const ASSETS = [
@@ -13,6 +13,8 @@ const ASSETS = [
   './js/search.js',
   './js/actionfiles.js',
   './js/stickerinput.js',
+  './js/fonts.js',
+  './js/templateedit.js',
   './js/testdata.js',
   './js/ui.js',
   './js/crop.js',

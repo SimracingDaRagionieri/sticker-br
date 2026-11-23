@@ -86,12 +86,18 @@ export function normalizeConfig(c = {}) {
 
 // ---------- font ----------
 
+// Promessa che app.js imposta con il caricamento dei font importati (FontFace): ogni disegno la attende,
+// cosi' un font importato non manca mai nel PNG nemmeno al primo avvio.
+let fontGate = null;
+export function setFontGate(promise) { fontGate = promise; }
+
 const q = (family) => `"${String(family).replace(/"/g, '')}"`;
 const fontString = (line, size) => `${line.weight} ${size}px ${q(line.font)}, "Roboto Condensed", sans-serif`;
 
 // Attende che i font usati dal template siano caricati prima di disegnare:
 // senza questa attesa il PNG puo' uscire con il font di sistema (soprattutto al primo avvio).
 async function ensureFonts(lines, texts) {
+  if (fontGate) { try { await fontGate; } catch { /* i font importati non bloccano il disegno */ } }
   if (!document.fonts || !document.fonts.load) return;
   const sample = (texts.join(' ') + ' Aa').slice(0, 200);
   const jobs = new Set();

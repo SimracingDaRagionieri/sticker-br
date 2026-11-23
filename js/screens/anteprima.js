@@ -85,7 +85,7 @@ export async function render(el) {
     tpl: tpl0,
     showUnitImg: false,
     showWeaponImg: false,
-    showIcon: hasIcon, // l'icona dell'azione, se c'e', e' mostrata di default (come negli sticker di Crea)
+    showIcon: false,
     unitText: unit ? unit.name : '',
     weaponText: weapon ? weapon.name : '',
     actionText: actionText(action)
@@ -97,7 +97,10 @@ export async function render(el) {
     st.showUnitImg = hasUnitImg && !!(cfg.image && cfg.image.show);
     st.showWeaponImg = hasWeaponImg && !!(cfg.weaponImage && cfg.weaponImage.show);
   };
+  // Azioni disegnate: l'icona parte da quanto prevede il template (come in Crea), solo se l'azione ne ha una.
+  const resetIcon = () => { st.showIcon = hasIcon && !!(((st.tpl && st.tpl.config) || {}).image || {}).show; };
   resetToggles();
+  resetIcon();
 
   const ctxLine = [game && game.name, faction && faction.name].filter(Boolean).join(' · ');
 
@@ -226,6 +229,7 @@ export async function render(el) {
     if (!t || t.id === st.tpl.id) return;
     st.tpl = t;
     resetToggles();
+    resetIcon();
     syncToggles();
     syncFav();
     el.querySelectorAll('[data-tpl]').forEach((c) => c.setAttribute('aria-pressed', String(Number(c.dataset.tpl) === t.id)));

@@ -100,7 +100,7 @@ const SEED_TEMPLATES = [
     config: {
       width: 1080, padding: 24, trim: true,
       plate: { show: true, color: '#111111', opacity: 0.85, radius: 20, padding: 28 },
-      image: { show: false, side: 'left', height: 140, radius: 12 },
+      image: { show: true, side: 'left', height: 140, radius: 12 },
       weaponImage: { show: false, position: 'below', maxHeight: 200 },
       lines: [
         { source: 'action', font: 'Bebas Neue', size: 120, minSize: 60, color: '#FFFFFF', stroke: { width: 6, color: '#000000' }, shadow: true, upper: true, align: 'center' }
@@ -151,11 +151,10 @@ async function seedTemplates() {
       const prev = await db.settings.get('defaultTemplates');
       await db.settings.put({ key: 'defaultTemplates', value: { ...defaults, ...(prev ? prev.value : {}) } });
       await db.settings.put({ key: 'seededTemplates', value: 1 });
-      await db.settings.put({ key: 'templatesRev', value: 2 });
+      await db.settings.put({ key: 'templatesRev', value: 3 }); // i predefiniti nascono gia' alla revisione 3
       return;
     }
     // Revisione 2 (Passo 4, dopo la prova): targa spenta in "Attivazione" e profilo arma al posto del nome.
-    // Gli editor dei template arrivano al Passo 7, quindi i predefiniti non sono ancora modificabili dall'utente.
     const rev = await db.settings.get('templatesRev');
     if (!rev || rev.value < 2) {
       for (const t of SEED_TEMPLATES) {
@@ -163,6 +162,19 @@ async function seedTemplates() {
         if (row) await db.templates.update(row.id, { config: structuredClone(t.config) });
       }
       await db.settings.put({ key: 'templatesRev', value: 2 });
+    }
+    // Revisione 3 (Passo 9): l'icona dell'azione la decide il template (`image.show`). Fino al Passo 8 l'icona era
+    // mostrata sempre se esisteva, quindi i template di tipo action esistenti passano a show: true (senza icona
+    // non cambia nulla: l'aspetto di nessuno sticker cambia). Non tocca i template creati dopo (rev >= 3).
+    const rev3 = await db.settings.get('templatesRev');
+    if (!rev3 || rev3.value < 3) {
+      const rows = await db.templates.where('kind').equals('action').toArray();
+      for (const r of rows) {
+        const cfg = structuredClone(r.config || {});
+        cfg.image = { ...(cfg.image || {}), show: true };
+        await db.templates.update(r.id, { config: cfg });
+      }
+      await db.settings.put({ key: 'templatesRev', value: 3 });
     }
   });
 }
@@ -218,6 +230,77 @@ export async function getDefaultTemplate(kind) {
   if (row && row.kind === kind) return row;
   return (await listTemplates(kind))[0] || null;
 }
+
+// ---- Gestione template (Passo 9) ----
+const sameTplName = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+
+async function assertTemplateName(kind, name, exceptId = null) {
+  const n = cleanName(name);
+  const clash = (await listTemplates(kind)).find((t) => t.id !== exceptId && sameTplName(t.name, n));
+  if (clash) throw new Error('Esiste gia\' un template con questo nome');
+  return n;
+}
+
+export async function renameTemplate(id, name) {
+  const t = await db.templates.get(id);
+  if (!t) throw new Error('Template non trovato');
+  const n = await assertTemplateName(t.kind, name, id);
+  await db.templates.update(id, { name: n });
+  return n;
+}
+
+// Salva la config (salvataggio automatico dell'editor). Restituisce false se il template non esiste piu'.
+export async function setTemplateConfig(id, config) {
+  const t = await db.templates.get(id);
+  if (!t) return false;
+  await db.templates.update(id, { config: structuredClone(config) });
+  return true;
+}
+
+// Copia di un template: stesso tipo, nome unico ("X (copia)", "X (copia 2)"...), mai predefinito.
+export async function duplicateTemplate(id) {
+  const t = await db.templates.get(id);
+  if (!t) throw new Error('Template non trovato');
+  const names = (await listTemplates(t.kind)).map((x) => x.name);
+  let name = `${t.name} (copia)`;
+  for (let i = 2; names.some((n) => sameTplName(n, name)); i++) name = `${t.name} (copia ${i})`;
+  return db.templates.add({ name, kind: t.kind, config: structuredClone(t.config) });
+}
+
+export async function setDefaultTemplate(id) {
+  const t = await db.templates.get(id);
+  if (!t) throw new Error('Template non trovato');
+  const prev = (await db.settings.get('defaultTemplates')) || { value: {} };
+  await db.settings.put({ key: 'defaultTemplates', value: { ...(prev.value || {}), [t.kind]: id } });
+}
+
+// Elimina un template, mai l'ultimo del suo tipo. Se era il predefinito, il predefinito diventa il primo rimasto.
+// Recenti e preferiti che lo citano restano: Crea e Anteprima ricadono sul predefinito se il template non c'e'.
+export async function deleteTemplate(id) {
+  await db.transaction('rw', db.templates, db.settings, async () => {
+    const t = await db.templates.get(id);
+    if (!t) return;
+    const same = await db.templates.where('kind').equals(t.kind).toArray();
+    if (same.length <= 1) throw new Error('Non si puo\' eliminare l\'ultimo template di questo tipo');
+    await db.templates.delete(id);
+    const s = await db.settings.get('defaultTemplates');
+    const defs = (s && s.value) || {};
+    if (defs[t.kind] === id) {
+      const first = same.filter((x) => x.id !== id).sort((a, b) => a.id - b.id)[0];
+      await db.settings.put({ key: 'defaultTemplates', value: { ...defs, [t.kind]: first.id } });
+    }
+  });
+}
+
+// ---- Font importati (Passo 9): tabella fonts { family, blob, format } ----
+export const FONT_FORMATS = ['ttf', 'otf', 'woff2', 'woff'];
+export async function listFonts() { return (await db.fonts.toArray()).sort((a, b) => byName({ name: a.family }, { name: b.family })); }
+export async function addFont(family, blob, format) {
+  const f = cleanName(family);
+  if ((await db.fonts.toArray()).some((x) => sameTplName(x.family, f))) throw new Error('Esiste gia\' un font con questo nome');
+  return db.fonts.add({ family: f, blob, format });
+}
+export const deleteFont = (id) => db.fonts.delete(id);
 
 // Tutto cio' che serve a disegnare uno sticker: righe del database e Blob delle immagini.
 export async function getStickerSource({ unitId = null, weaponId = null, actionId = null }) {

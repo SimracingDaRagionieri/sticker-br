@@ -5,7 +5,8 @@
 //
 // Azioni (Passo 8): mode 'png' = PNG importato, lo sticker e' il file originale (nessun disegno, nessun template);
 // mode 'generated' = disegnata col template di tipo action; l'eventuale icona (src.actionImage) usa lo slot `image`
-// del template ed e' mostrata ogni volta che esiste (interruttore "Icona azione" in Anteprima).
+// del template. Il template decide il valore di partenza (`image.show`): l'icona compare se il template la prevede E
+// l'azione ha un'icona; l'interruttore "Icona azione" in Anteprima la spegne o la riaccende sul singolo sticker.
 
 import { renderSticker } from './render.js';
 
@@ -19,7 +20,7 @@ export const isPngAction = (src) => !!(src && src.action && src.action.mode === 
 export function buildStickerInput(src, tpl) {
   const cfg = structuredClone((tpl && tpl.config) || {});
   const icon = src.action && !isPngAction(src) ? src.actionImage || null : null;
-  cfg.image = { ...(cfg.image || {}), show: src.action ? !!icon : !!(src.unitImage && cfg.image && cfg.image.show) };
+  cfg.image = { ...(cfg.image || {}), show: !!((src.action ? icon : src.unitImage) && cfg.image && cfg.image.show) };
   cfg.weaponImage = { ...(cfg.weaponImage || {}), show: !!(src.weaponImage && cfg.weaponImage && cfg.weaponImage.show) };
   const data = {
     unitName: src.unit ? src.unit.name : '',
