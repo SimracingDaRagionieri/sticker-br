@@ -10,7 +10,7 @@ import * as D from '../db.js';
 import { renderSticker } from '../render.js';
 import { shareBlobs, stickerFilename } from '../export.js';
 import { saveSticker, savedText } from '../folder.js';
-import { getLogItem, renderLogItem, itemActionText } from '../logsource.js';
+import { getLogItem, withNameAbove, itemActionText } from '../logsource.js';
 import { itemFilename, itemLabel, joinDamageLeft } from '../logsticker.js';
 import { queueButtonHTML, bindQueueButton } from './coda.js';
 import { toast, parseHash, canGoBack } from '../app.js';
@@ -122,6 +122,10 @@ export async function render(el) {
   const hasIcon = !!action && !png && !!src.actionImage;
   const isResult = kind === 'result';
   const isScore = fromLog && logItem.type === 'score';
+  // Azione dal log con miniatura nota: nome e azione in un solo sticker (nome sopra), anche per i PNG importati.
+  const canName = fromLog && logItem.type === 'action' && !!logItem.unitName;
+  const nameTpl = canName ? await D.getDefaultTemplate('activation') : null;
+  if (!alive()) return;
 
   const st = {
     tpl: tpl0,
@@ -135,7 +139,8 @@ export async function render(el) {
     targetText: fromLog ? logItem.targetName || '' : '',
     damageText: fromLog ? logItem.damageText || '' : '',
     woundsLeftText: fromLog ? logItem.woundsLeftText || '' : '',
-    statusText: fromLog ? logItem.statusText || '' : ''
+    statusText: fromLog ? logItem.statusText || '' : '',
+    showName: !!nameTpl
   };
   // Gli interruttori partono da quanto prevede il template, solo se l'immagine esiste.
   const resetToggles = () => {
@@ -174,6 +179,8 @@ export async function render(el) {
       ${templates.map((t) => `<button type="button" class="chip" data-tpl="${t.id}" aria-pressed="${t.id === st.tpl.id}">${esc(t.name)}</button>`).join('')}
     </div>`}
     ${kind === 'action' && hasIcon ? `<div class="toggles"><label class="check"><input type="checkbox" data-toggle="icon"><span>Icona azione</span></label></div>` : ''}
+    ${nameTpl ? `<div class="toggles"><label class="check"><input type="checkbox" data-toggle="name"><span>Nome ${esc(L.unit.toLowerCase())} sopra l'azione</span></label></div>
+      <label class="field"><span>${esc(L.unit)}</span><input type="text" data-text="unit" value="${esc(st.unitText)}" autocomplete="off" spellcheck="false"></label>` : ''}
     ${kind === 'activation' || (isResult && !isScore) ? `
       <div class="toggles">
         ${unit || isResult ? `<label class="check"><input type="checkbox" data-toggle="unit"${hasUnitImg ? '' : ' disabled'}><span>Immagine ${isResult ? 'bersaglio' : esc(L.unit.toLowerCase())}${hasUnitImg ? '' : ' (non importata)'}</span></label>` : ''}
@@ -202,7 +209,8 @@ export async function render(el) {
   const img = $('#pv-img');
   const wait = $('#pv-wait');
   const syncToggles = () => {
-    const u = $('[data-toggle="unit"]'), w = $('[data-toggle="weapon"]'), ic = $('[data-toggle="icon"]');
+    const u = $('[data-toggle="unit"]'), w = $('[data-toggle="weapon"]'), ic = $('[data-toggle="icon"]'), nm = $('[data-toggle="name"]');
+    if (nm) nm.checked = st.showName;
     if (u) u.checked = st.showUnitImg;
     if (w) w.checked = st.showWeaponImg;
     if (ic) ic.checked = st.showIcon;
@@ -240,7 +248,8 @@ export async function render(el) {
     dirty = false;
     const mine = ++gen;
     // Azione 'png': il Blob originale, mai ridisegnato.
-    const p = png ? Promise.resolve(src.actionImage) : (() => { const { data, cfg } = buildInput(); return renderSticker(data, cfg); })();
+    let p = png ? Promise.resolve(src.actionImage) : (() => { const { data, cfg } = buildInput(); return renderSticker(data, cfg); })();
+    if (nameTpl && st.showName && st.unitText.trim()) p = p.then((b) => withNameAbove(logItem, b, nameTpl, st.unitText));
     pending = p;
     p.then((blob) => {
       if (!alive() || mine !== gen) return;
@@ -312,6 +321,8 @@ export async function render(el) {
   if (u) u.addEventListener('change', () => { st.showUnitImg = u.checked; draw(); });
   if (w) w.addEventListener('change', () => { st.showWeaponImg = w.checked; draw(); });
   if (ic) ic.addEventListener('change', () => { st.showIcon = ic.checked; draw(); });
+  const nmT = $('[data-toggle="name"]');
+  if (nmT) nmT.addEventListener('change', () => { st.showName = nmT.checked; draw(); });
 
   el.querySelectorAll('[data-text]').forEach((inp) => inp.addEventListener('input', () => {
     st[inp.dataset.text + 'Text'] = inp.value;

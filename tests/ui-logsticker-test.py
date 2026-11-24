@@ -372,7 +372,25 @@ with sync_playwright() as pw:
     page.wait_for_timeout(300)
     page.screenshot(path=f'{SHOTS}/04-coda.png', full_page=True)
     sig_item = next(x for x in q if f'_{seq[ev["x3"]]:03d}_' in x['name'])
-    check(sig_item['sha'] == ids['pngHash'], 'azione PNG dal log: esce identica (stessi byte)')
+    # Dal 24/11/2026: l'azione dal log esce in UN solo sticker, col nome della miniatura sopra (il PNG resta intatto sotto).
+    check(sig_item['sha'] != ids['pngHash'] and sig_item['h'] > 120 and sig_item['w'] >= 240, f'azione PNG dal log: nome miniatura sopra il PNG ({sig_item["w"]}x{sig_item["h"]}, PNG originale 240x120)')
+    x1_item = next(x for x in q if f'_{seq[ev["x1"]]:03d}_' in x['name'])
+    check(x1_item['h'] > 0, 'azione disegnata dal log: PNG valido')
+    # Anteprima: interruttore "nome sopra l'azione"; spento, il PNG esce identico al file importato
+    page.goto(BASE + f'#/anteprima?match={mid}&ev={ev["x3"]}')
+    page.wait_for_function("document.querySelector('#pv-img') && document.querySelector('#pv-img').naturalWidth > 0")
+    check(page.locator('[data-toggle="name"]').is_checked() and page.locator('[data-text="unit"]').input_value() != '', 'Anteprima azione PNG: interruttore nome acceso e campo miniatura')
+    h_on = page.evaluate("document.querySelector('#pv-img').naturalHeight")
+    check(h_on == sig_item['h'], f'anteprima = sticker generato ({h_on})')
+    src_n = page.evaluate("document.querySelector('#pv-img').src")
+    page.locator('[data-toggle="name"]').uncheck()
+    page.wait_for_function("(s) => document.querySelector('#pv-img').src !== s", arg=src_n)
+    page.wait_for_timeout(300)
+    check(page.evaluate("document.querySelector('#pv-img').naturalHeight") == 120, 'senza nome: il PNG originale (240x120)')
+    with page.expect_download() as dl2:
+        page.locator('[data-save]').click()
+    import hashlib as _h
+    check(_h.sha256(open(dl2.value.path(), 'rb').read()).hexdigest() == ids['pngHash'], 'senza nome sopra: stessi byte del PNG importato')
     score_item = next(x for x in q if '_punti_' in x['name'])
     check(score_item['name'].endswith('punti_Vando_pt2.png') and score_item['w'] == 1080, f'punti: {score_item["name"]}')
 
@@ -425,6 +443,18 @@ with sync_playwright() as pw:
     page.reload()
     page.wait_for_selector('.q-item')
     check(page.locator('.q-item').count() == n, 'la coda sopravvive al ricaricamento (IndexedDB)')
+    # Un solo sticker: Salva e Condividi su ogni riga, senza toccare la coda
+    check(page.locator('[data-q-one]').count() == n and page.locator('[data-q-one-share]').count() == n, 'Salva e Condividi su ogni riga')
+    second = queue(page)[1]
+    with page.expect_download() as dl1:
+        page.locator('.q-item').nth(1).locator('[data-q-one]').click()
+    check(dl1.value.suggested_filename == second['name'], f'Salva singolo: {dl1.value.suggested_filename}')
+    check(open(dl1.value.path(), 'rb').read()[:8] == b'\x89PNG\r\n\x1a\n', 'file singolo = PNG valido')
+    page.evaluate("() => { window.__shared = null; navigator.canShare = () => true; navigator.share = async (d) => { window.__shared = d.files.map((f) => f.name); }; }")
+    page.locator('.q-item').nth(1).locator('[data-q-one-share]').click()
+    page.wait_for_function("window.__shared !== null")
+    check(page.evaluate("window.__shared") == [second['name']], 'Condividi singolo: un solo file, quello della riga')
+    check(len(queue(page)) == n, 'Salva/Condividi singolo non tolgono nulla dalla coda')
     first_id = page.locator('.q-item').first.get_attribute('data-qid')
     page.locator('.q-item').first.locator('[data-q-del]').click()
     page.wait_for_function(f"document.querySelectorAll('.q-item').length === {n - 1}")

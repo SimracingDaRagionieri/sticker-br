@@ -2,8 +2,9 @@
 
 Specifica e piano di sviluppo (documento del 22/11/2026). I prompt dei singoli passi fanno riferimento alle sezioni 2–4.
 
-## Stato di avanzamento (aggiornato al 23/11/2026, sera)
+## Stato di avanzamento (aggiornato al 24/11/2026, mattina)
 
+- PASSO 15 (Segnalazioni di Manu del 24/11: nome miniatura sull'azione, Salva/Condividi singolo dalla coda) REALIZZATO, DA PROVARE SUL TELEFONO. CACHE_VERSION 'v22'. Dettaglio nella sezione "Passo 15" in fondo. Test aggiornati: `tests/ui-logsticker-test.py` (azione PNG dal log composta, interruttore in Anteprima, pulsanti singoli della coda). Tutti i test verdi. Nessun altro passo previsto.
 - PASSO 14 (Colori dei team) REALIZZATO, DA PROVARE SUL TELEFONO. CACHE_VERSION 'v21'. Dettaglio nella sezione "Passo 14". Test nuovi dentro `tests/logexport-test.mjs` (teamColors, contrasti, operatori colore nel PDF) e `tests/ui-rifiniture-test.py` (classi tm0/tm1, variabili --t0/--t1, scelta colori dal menu e dal form, colori uguali rifiutati, lista, PDF). Tutti i test verdi. Nessun altro passo previsto.
 - PASSO 13 (Rifiniture + esportazione del log in PDF) REALIZZATO, DA PROVARE SUL TELEFONO. CACHE_VERSION 'v18'. Dettaglio nella sezione "Passo 13". Test nuovi: `node tests/logexport-test.mjs` (PDF riletto con pdf.js), `python3 tests/ui-rifiniture-test.py` (Altro, cartella dedicata con finta cartella, PDF dal menu, offline con service worker, aree di tocco e contrasti su tutte le schermate); `ui-crea-test.py` ora crea i 300 elementi con `tests/testdata.js`. Tutti gli altri test verdi. Non ci sono altri passi previsti: restano solo le prove sul telefono e i difetti noti elencati nel Passo 13.
 - PASSO 6 (Importa PDF squadra): CHIUSO. Provato da Manu sul telefono con PDF veri, funziona tutto bene (23/11/2026).
@@ -512,3 +513,21 @@ VERIFICA SUL TELEFONO (Passo 14):
 3. Nuova partita: i colori sono gia' blu e arancione.
 4. Menu ⋮ > "Esporta PDF…": barrette e punti colorati come sullo schermo; stampa o guarda in bianco e nero: i segni ●/◆ e i nomi bastano a distinguere.
 5. Correggere i dati iniziali (v21): menu ⋮ > "Modifica dati partita…" ora permette di cambiare anche la fazione di ciascun giocatore (elenco del gioco oppure «scrivo il nome»); menu ⋮ > "Cambia gioco…" cambia il gioco (con conferma): etichetta dei turni e fazioni disponibili passano al nuovo gioco, le fazioni gia' scelte restano come testo, rosa e cronologia non cambiano. La modalita' diretta/ricostruzione si cambia gia' dal menu. Non si puo' piu' cambiare altro dopo la creazione: l'ordine dei giocatori (lato 1/2) resta fisso.
+
+### Passo 15 – Nome miniatura sull'azione e download singolo dalla coda (FATTO, da provare sul telefono)
+
+Realizzato (24/11/2026, CACHE_VERSION 'v22'). Segnalazioni di Manu via WhatsApp: (1) "gli sticker non hanno il profilo armi", (2) "il nome della bestia mi sembra separato", (3) scaricare uno sticker alla volta. Chiarimento di Vando con screenshot di Manu: il profilo arma c'e' gia'; 1 e 2 sono la stessa richiesta: lo sticker dell'azione (es. REPOSITION) usciva da solo e il nome della miniatura (es. RAVENER FELLTALON) in un altro sticker; meglio uno solo. Vando: "se e' un casino va bene lo stesso", quindi la soluzione e' minima e spegnibile. Le azioni di Manu sono PNG importati.
+
+- Sticker dal log di tipo azione con miniatura nota: UN solo sticker, nome miniatura sopra l'azione. `render.js` `stackStickers(sopra, sotto)` impila due PNG centrati; `logsource.js` `renderNameSticker` (riga "miniatura" del template Attivazione predefinito, senza immagini) e `withNameAbove`; `renderLogItem(item, src, tpl, {nameTpl})` e `generateForMatch` lo applicano. Vale anche per le azioni PNG importate: il PNG non e' modificato, e' solo disegnato sotto il nome. Nessun template cambia, nessuna migrazione.
+- Anteprima dal log (azione con miniatura): interruttore "Nome <etichetta miniatura> sopra l'azione" (acceso di partenza) e campo testo della miniatura. Spento, l'azione PNG esce con gli stessi byte del file importato (provato).
+- DECISIONE: la riga del nome usa lo stile della riga "miniatura" del template Attivazione predefinito (si cambia dall'editor template). Il nome file e l'etichetta in coda restano quelli di prima.
+- Coda (`#/coda`): su ogni riga "Salva" (cartella dedicata se c'e', altrimenti Download, stesso toast di "Salva tutti") e "Condividi" (share sheet, ripiego sul download). Non tolgono nulla dalla coda. L'Anteprima aveva gia' Salva e Condividi sul singolo sticker.
+- Limiti: gli sticker azione fatti in Crea/Libreria non hanno una miniatura, quindi restano com'erano; "Attivazione" (nome + arma) e azione restano due sticker distinti: per averne uno solo, in "Genera sticker della partita" togli la spunta "Attivazioni". Il PNG sotto non e' ridimensionato: la larghezza dello sticker e' la maggiore tra nome e PNG.
+
+VERIFICA SUL TELEFONO (Passo 15):
+1. Aggiorna l'app (Altro > App: "Versione dell'app: v22").
+2. Log > partita con una Reposition > Cronologia > voce dell'azione > "Crea sticker": nome miniatura sopra REPOSITION in un unico sticker; spegni l'interruttore: torna il PNG originale.
+3. Menu partita > "Genera sticker della partita…" (togli "Attivazioni" se non vuoi il doppione) > Apri la coda: le azioni hanno il nome sopra.
+4. In coda, "Salva" su una riga: un solo file in Download (o nella cartella); "Condividi": share sheet con un solo file. La coda resta com'era.
+5. In InShot lo sticker composto ha la trasparenza.
+

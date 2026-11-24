@@ -412,3 +412,26 @@ export async function renderSticker(data = {}, config = {}) {
     if (weaponBmp && weaponBmp.close) weaponBmp.close();
   }
 }
+
+// Impila due sticker PNG (uno sopra l'altro, centrati) in un unico PNG trasparente. Usato per "nome miniatura sopra
+// l'azione" negli sticker dal log: funziona anche con un PNG importato (che resta intatto, viene solo disegnato sotto).
+export async function stackStickers(topBlob, bottomBlob, { gap = 4 } = {}) {
+  const [a, b] = await Promise.all([toBitmap(topBlob), toBitmap(bottomBlob)]);
+  try {
+    if (!a || !b) throw new Error('Immagine dello sticker non leggibile');
+    const W = Math.max(a.width, b.width);
+    const canvas = makeCanvas(W, a.height + gap + b.height);
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(a, Math.round((W - a.width) / 2), 0);
+    ctx.drawImage(b, Math.round((W - b.width) / 2), a.height + gap);
+    return await new Promise((resolve, reject) => {
+      canvas.toBlob((x) => (x ? resolve(x) : reject(new Error('toBlob fallito'))), 'image/png');
+    });
+  } finally {
+    if (a && a.close) a.close();
+    if (b && b.close) b.close();
+  }
+}

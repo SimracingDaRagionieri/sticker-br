@@ -114,13 +114,28 @@ export async function render(el) {
         urls.push(url);
         return `<li class="q-item" data-qid="${it.id}">
           <span class="q-thumb checker-bg"><img src="${url}" alt="" loading="lazy"></span>
-          <span class="q-txt"><b>${esc(it.label || it.name)}</b><small>${esc(it.name)}</small></span>
+          <span class="q-txt"><b>${esc(it.label || it.name)}</b><small>${esc(it.name)}</small>
+            <span class="q-acts"><button type="button" data-q-one="${it.id}">Salva</button><button type="button" data-q-one-share="${it.id}">Condividi</button></span></span>
           <button type="button" class="kebab" data-q-del="${it.id}" aria-label="Togli dalla coda">✕</button>
         </li>`;
       }).join('')}</ul>${queueActionsHTML()}` : '<p class="empty">Aggiungi sticker dall\'Anteprima ("Aggiungi alla coda") o dal menu di una partita del Log ("Genera sticker della partita").</p>'}`;
     el.querySelector('[data-back]').addEventListener('click', back);
     bindQueueActions(el);
     el.querySelectorAll('[data-q-del]').forEach((b) => b.addEventListener('click', () => D.queueRemove(Number(b.dataset.qDel))));
+    // Un solo sticker: stessa cartella/Download e stessa condivisione di "Salva tutti" / "Condividi tutti"; non toglie nulla dalla coda.
+    const byId = new Map(items.map((i) => [i.id, i]));
+    let busyOne = false;
+    const one = (attr, fn) => el.querySelectorAll(`[${attr}]`).forEach((b) => b.addEventListener('click', async () => {
+      const it = byId.get(Number(b.getAttribute(attr)));
+      if (!it || busyOne) return;
+      busyOne = true;
+      try { await fn(it); } catch (err) { console.error(err); toast('Errore: ' + err.message); } finally { busyOne = false; }
+    }));
+    one('data-q-one', async (it) => toast(savedText(await saveStickers([{ blob: it.blob, name: it.name }]))));
+    one('data-q-one-share', async (it) => {
+      const r = await shareBlobs([it.blob], [it.name]);
+      if (r === 'saved') toast('Condivisione non disponibile: salvato in Download');
+    });
   }
   // Ogni modifica della coda (anche Svuota o un'altra scheda) ridisegna l'elenco finche' la schermata e' aperta.
   const onChange = () => { if (!alive()) { window.removeEventListener('sbr-queue', onChange); return; } draw(); };

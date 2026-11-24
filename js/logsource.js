@@ -6,7 +6,7 @@
 
 import * as D from './db.js';
 import * as LS from './logsticker.js';
-import { renderSticker } from './render.js';
+import { renderSticker, stackStickers } from './render.js';
 import { actionText, isPngAction } from './stickerinput.js';
 
 // Stato della partita + voci da stickerare per i tipi scelti (tutti se `types` manca).
@@ -80,11 +80,32 @@ export function buildLogInput(item, src, tpl) {
   return { data, cfg };
 }
 
-export async function renderLogItem(item, src, tpl) {
-  if (isPngItem(item, src)) return src.actionImage;
-  if (!tpl) throw new Error('Nessun template disponibile');
-  const { data, cfg } = buildLogInput(item, src, tpl);
-  return renderSticker(data, cfg);
+// Riga col nome della miniatura, nello stile della riga "miniatura" del template Attivazione (senza immagini).
+export async function renderNameSticker(name, activationTpl) {
+  const cfg = structuredClone((activationTpl && activationTpl.config) || {});
+  const unitLine = (cfg.lines || []).find((l) => l.source === 'unit');
+  cfg.lines = [unitLine || { source: 'unit', font: 'Bebas Neue', size: 96, minSize: 56, color: '#FFFFFF', stroke: { width: 6, color: '#000000' }, shadow: true, upper: true, align: 'center' }];
+  cfg.image = { ...(cfg.image || {}), show: false };
+  cfg.weaponImage = { ...(cfg.weaponImage || {}), show: false };
+  return renderSticker({ unitName: name }, cfg);
+}
+
+// Sticker di un'azione dal log: se la miniatura e' nota e `nameTpl` e' dato, nome e azione escono in UN solo sticker
+// (nome sopra). Vale anche per le azioni PNG importate: il PNG non viene toccato, e' solo disegnato sotto il nome.
+export async function withNameAbove(item, blob, nameTpl, name = item.unitName) {
+  if (item.type !== 'action' || !name || !String(name).trim() || !nameTpl) return blob;
+  return stackStickers(await renderNameSticker(name, nameTpl), blob);
+}
+
+export async function renderLogItem(item, src, tpl, { nameTpl = null } = {}) {
+  let blob;
+  if (isPngItem(item, src)) blob = src.actionImage;
+  else {
+    if (!tpl) throw new Error('Nessun template disponibile');
+    const { data, cfg } = buildLogInput(item, src, tpl);
+    blob = await renderSticker(data, cfg);
+  }
+  return withNameAbove(item, blob, nameTpl);
 }
 
 // Genera gli sticker dei tipi scelti, nell'ordine del log, e li mette in coda (chiave m<partita>-e<evento>: rigenerare
@@ -94,12 +115,13 @@ export async function generateForMatch(matchId, types, { onProgress, shouldStop 
   if (!m) throw new Error('Partita non trovata');
   const tpls = {};
   for (const k of new Set(m.items.map((i) => i.templateKind))) tpls[k] = await D.getDefaultTemplate(k);
+  const nameTpl = m.items.some((i) => i.type === 'action' && i.unitName) ? await D.getDefaultTemplate('activation') : null;
   const res = { total: m.items.length, done: 0, failed: 0, stopped: false };
   for (const item of m.items) {
     if (shouldStop && shouldStop()) { res.stopped = true; break; }
     try {
       const src = await resolveSource(item);
-      const blob = await renderLogItem(item, src, tpls[item.templateKind]);
+      const blob = await renderLogItem(item, src, tpls[item.templateKind], { nameTpl });
       await D.queueAdd({ key: `m${matchId}-e${item.id}`, name: LS.itemFilename(m.match, item), label: `${item.seq}. ${LS.itemLabel(item)}`, blob });
       res.done++;
     } catch (err) {

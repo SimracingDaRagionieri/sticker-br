@@ -1,5 +1,5 @@
 // Service worker cache-first. Incrementa CACHE_VERSION a ogni modifica ai file.
-const CACHE_VERSION = 'v21';
+const CACHE_VERSION = 'v22';
 const CACHE_NAME = 'sbr-' + CACHE_VERSION;
 
 const ASSETS = [
